@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0.36
+psycopg2-binary
+pydantic
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+# passlib 1.7.x không tương thích bcrypt 4+ (lỗi __about__). Giữ bcrypt 3.x.
+bcrypt>=3.2.2,<4
+python-multipart
+redis
+rq
+boto3
+httpx
+python-dotenv
+email-validator
