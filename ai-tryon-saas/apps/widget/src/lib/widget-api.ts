@@ -21,6 +21,23 @@ export type WidgetProduct = {
   thumbnail_url: string | null;
 };
 
+export type WidgetBodyModel = {
+  id: string;
+  shop_id: string;
+  name: string;
+  thumbnail_url: string | null;
+  model_type: string;
+  status: string;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type WidgetBodyModelsResponse = {
+  shop: WidgetShop;
+  body_models: WidgetBodyModel[];
+};
+
 export type WidgetCatalogResponse = {
   shop: WidgetShop;
   products: WidgetProduct[];
@@ -134,6 +151,38 @@ export async function getWidgetProducts(shopRef: string) {
   return requestJson<WidgetCatalogResponse>(
     `/api/v1/widget/shops/${encodeURIComponent(shopRef)}/products`,
   );
+}
+
+export async function getWidgetBodyModels(shopRef: string) {
+  try {
+    return await requestJson<WidgetBodyModelsResponse>(
+      `/api/v1/widget/shops/${encodeURIComponent(shopRef)}/body-models`,
+    );
+  } catch {
+    // Fallback for the current backend where body_models is still exposed by the generic CRUD route.
+    // Production recommendation: add the public widget endpoint above to avoid exposing all body models.
+    const [config, bodyModels] = await Promise.all([
+      getWidgetConfig(shopRef),
+      requestJson<WidgetBodyModel[]>("/api/v1/body-models?skip=0&limit=1000"),
+    ]);
+
+    const filteredModels = bodyModels.filter((model) => {
+      return (
+        model.shop_id === config.shop.id &&
+        model.status !== "deleted" &&
+        Boolean(normalizePublicImageUrl(model.thumbnail_url || ""))
+      );
+    });
+
+    return {
+      shop: {
+        id: config.shop.id,
+        name: config.shop.name,
+        domain: config.shop.domain,
+      },
+      body_models: filteredModels,
+    };
+  }
 }
 
 export async function getWidgetProduct(productId: string, shopRef?: string) {

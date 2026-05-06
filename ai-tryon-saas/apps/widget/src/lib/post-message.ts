@@ -3,7 +3,8 @@ export type WidgetEventName =
   | "AI_TRYON_PRODUCT_SELECTED"
   | "AI_TRYON_JOB_CREATED"
   | "AI_TRYON_JOB_COMPLETED"
-  | "AI_TRYON_JOB_FAILED";
+  | "AI_TRYON_JOB_FAILED"
+  | "AI_TRYON_BODY_MODEL_SELECTED";
 
 export type WidgetEventPayload = Record<string, unknown>;
 

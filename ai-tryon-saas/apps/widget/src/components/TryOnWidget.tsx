@@ -7,11 +7,13 @@ import UploadUserImage from "@/components/UploadUserImage";
 import {
   createTryOnJob,
   getTryOnJob,
+  getWidgetBodyModels,
   getWidgetConfig,
   getWidgetProduct,
   getWidgetProducts,
   normalizePublicImageUrl,
   type TryOnJob,
+  type WidgetBodyModel,
   type WidgetConfig,
   type WidgetProduct,
   type WidgetShop,
@@ -27,7 +29,12 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
   const [shop, setShop] = useState<WidgetShop | null>(null);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
   const [products, setProducts] = useState<WidgetProduct[]>([]);
+  const [bodyModels, setBodyModels] = useState<WidgetBodyModel[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(productId || null);
+  const [selectedBodyModelId, setSelectedBodyModelId] = useState<string | null>(null);
+  const [showBodyModelModal, setShowBodyModelModal] = useState(false);
+  const [bodyModelSearchQuery, setBodyModelSearchQuery] = useState("");
+  const [bodyModelTypeFilter, setBodyModelTypeFilter] = useState("all");
   const [userImageUrl, setUserImageUrl] = useState("");
   const [job, setJob] = useState<TryOnJob | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +68,35 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
 
     return Array.from(new Set(uniqueCategories)).sort((a, b) => a.localeCompare(b));
   }, [products]);
+
+  const bodyModelTypes = useMemo(() => {
+    const uniqueTypes = bodyModels
+      .map((model) => model.model_type?.trim())
+      .filter((modelType): modelType is string => Boolean(modelType));
+
+    return Array.from(new Set(uniqueTypes)).sort((a, b) => a.localeCompare(b));
+  }, [bodyModels]);
+
+  const filteredBodyModels = useMemo(() => {
+    const normalizedSearch = bodyModelSearchQuery.trim().toLowerCase();
+
+    return bodyModels.filter((model) => {
+      const matchesSearch = normalizedSearch
+        ? [model.name, model.model_type, model.id]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(normalizedSearch))
+        : true;
+
+      const matchesType = bodyModelTypeFilter === "all" ? true : model.model_type === bodyModelTypeFilter;
+
+      return matchesSearch && matchesType;
+    });
+  }, [bodyModelSearchQuery, bodyModels, bodyModelTypeFilter]);
+
+  const selectedBodyModel = useMemo(
+    () => bodyModels.find((model) => model.id === selectedBodyModelId) || null,
+    [bodyModels, selectedBodyModelId],
+  );
 
   const sortedProducts = useMemo(() => {
     const sort = behavior?.default_product_sort || "latest";
@@ -143,26 +179,30 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
         }
 
         if (productId) {
-          const [config, data] = await Promise.all([
+          const [config, data, bodyModelData] = await Promise.all([
             getWidgetConfig(shopRef),
             getWidgetProduct(productId, shopRef),
+            getWidgetBodyModels(shopRef),
           ]);
 
           if (ignore) return;
           setWidgetConfig(config);
           setShop(data.shop);
           setProducts([data.product]);
+          setBodyModels(bodyModelData.body_models);
           setSelectedProductId(data.product.id);
         } else {
-          const [config, data] = await Promise.all([
+          const [config, data, bodyModelData] = await Promise.all([
             getWidgetConfig(shopRef),
             getWidgetProducts(shopRef),
+            getWidgetBodyModels(shopRef),
           ]);
 
           if (ignore) return;
           setWidgetConfig(config);
           setShop(data.shop);
           setProducts(data.products);
+          setBodyModels(bodyModelData.body_models);
           setSelectedProductId((current) => current || data.products[0]?.id || null);
         }
 
@@ -215,6 +255,27 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
     postWidgetEvent("AI_TRYON_PRODUCT_SELECTED", {
       productId: product.id,
       productName: product.name,
+    });
+  }
+
+  function handleSelectBodyModel(model: WidgetBodyModel) {
+    if (!model.thumbnail_url) return;
+
+    const normalizedThumbnailUrl = normalizePublicImageUrl(model.thumbnail_url);
+    if (!normalizedThumbnailUrl) {
+      setError("Body model này chưa có ảnh hợp lệ.");
+      return;
+    }
+
+    setSelectedBodyModelId(model.id);
+    setUserImageUrl(normalizedThumbnailUrl);
+    setShowBodyModelModal(false);
+    setJob(null);
+    setError("");
+
+    postWidgetEvent("AI_TRYON_BODY_MODEL_SELECTED", {
+      bodyModelId: model.id,
+      bodyModelName: model.name,
     });
   }
 
@@ -277,7 +338,7 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
       className="min-h-screen p-4 sm:p-6"
       style={{ backgroundColor, color: textColor }}
     >
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto w-full max-w-7xl">
         <header
           className="overflow-hidden rounded-3xl shadow-sm"
           style={{ backgroundColor: primaryColor, color: "#ffffff" }}
@@ -458,7 +519,22 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
             </section>
 
             <div className="space-y-4">
-              <UploadUserImage value={userImageUrl} disabled={submitting} onChange={setUserImageUrl} />
+              <UploadUserImage
+                value={userImageUrl}
+                disabled={submitting}
+                hasBodyModels={bodyModels.length > 0}
+                onChange={(imageUrl) => {
+                  setUserImageUrl(imageUrl);
+                  setSelectedBodyModelId(null);
+                }}
+                onOpenBodyModels={() => setShowBodyModelModal(true)}
+              />
+
+              {selectedBodyModel ? (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                  Đang dùng body model: <span className="font-semibold">{selectedBodyModel.name}</span>
+                </div>
+              ) : null}
 
               {error ? (
                 <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{error}</div>
@@ -485,6 +561,115 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
           </div>
         )}
       </div>
+
+      {showBodyModelModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl shadow-slate-950/30">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">Body Models</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950">Chọn mẫu người mặc</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Chọn một model có sẵn. Ảnh model sẽ được đưa vào bước tải ảnh của bạn.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowBodyModelModal(false)}
+                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Tìm kiếm model
+                </label>
+                <input
+                  value={bodyModelSearchQuery}
+                  onChange={(event) => setBodyModelSearchQuery(event.target.value)}
+                  placeholder="Tìm theo tên model..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Loại model
+                </label>
+                <select
+                  value={bodyModelTypeFilter}
+                  onChange={(event) => setBodyModelTypeFilter(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                >
+                  <option value="all">Tất cả model</option>
+                  {bodyModelTypes.map((modelType) => (
+                    <option key={modelType} value={modelType}>
+                      {modelType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredBodyModels.length === 0 ? (
+              <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                <p className="text-sm font-semibold text-slate-700">Không tìm thấy body model</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Vui lòng đổi từ khóa, loại model hoặc thêm body model trong dashboard.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {filteredBodyModels.map((model) => {
+                  const thumbnailUrl = normalizePublicImageUrl(model.thumbnail_url || "");
+                  const selected = selectedBodyModelId === model.id;
+
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      disabled={!thumbnailUrl}
+                      onClick={() => handleSelectBodyModel(model)}
+                      className={[
+                        "group overflow-hidden rounded-3xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60",
+                        selected ? "border-blue-500 ring-4 ring-blue-100" : "border-slate-200",
+                      ].join(" ")}
+                    >
+                      <div className="aspect-[3/4] bg-slate-100">
+                        {thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={thumbnailUrl}
+                            alt={model.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-slate-400">
+                            Không có ảnh model
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-3">
+                        <p className="line-clamp-2 text-sm font-semibold text-slate-950">
+                          {model.name}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {model.model_type || "default"}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

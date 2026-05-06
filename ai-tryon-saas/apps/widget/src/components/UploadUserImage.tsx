@@ -4,7 +4,9 @@ import { normalizePublicImageUrl } from "@/lib/widget-api";
 type Props = {
   value: string;
   disabled?: boolean;
+  hasBodyModels?: boolean;
   onChange: (imageUrl: string) => void;
+  onOpenBodyModels?: () => void;
 };
 
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
@@ -19,7 +21,7 @@ function fileToDataUrl(file: File) {
   });
 }
 
-export default function UploadUserImage({ value, disabled, onChange }: Props) {
+export default function UploadUserImage({ value, disabled, hasBodyModels, onChange, onOpenBodyModels }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [error, setError] = useState("");
@@ -89,7 +91,31 @@ export default function UploadUserImage({ value, disabled, onChange }: Props) {
         </div>
       )}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+<div className="mt-4 grid gap-3">
+<div className="grid gap-3 sm:grid-cols-2">
+        {/* Use body model */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Chọn mẫu người
+              </h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Dùng ảnh body model có sẵn của shop.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={disabled || !hasBodyModels}
+            onClick={onOpenBodyModels}
+            className="mt-4 flex w-full items-center justify-center rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {hasBodyModels ? "Chọn mẫu" : "Chưa có mẫu"}
+          </button>
+        </div>
+
         {/* Upload from device */}
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
@@ -122,7 +148,7 @@ export default function UploadUserImage({ value, disabled, onChange }: Props) {
             onChange={(event) => handleFileChange(event.target.files?.[0])}
           />
         </div>
-
+</div>
         {/* Use image URL */}
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
