@@ -667,6 +667,86 @@ export default function ClientDashboardPage() {
   }, [activeSubscription, data.plans, session?.shop.plan]);
   const isShopOwner = ["owner", "shop_owner", "admin"].includes(session?.user.role ?? "");
   const isShopEmployee = session?.user.role === "employee";
+
+  const widgetBaseUrl =
+    process.env.NEXT_PUBLIC_WIDGET_BASE_URL ||
+    (typeof window !== "undefined" ? window.location.origin.replace(":3000", ":3001") : "");
+
+  const shopRef =
+    (session?.shop as ClientShop & { shop_ref?: string | null })?.shop_ref ||
+    session?.shop?.domain ||
+    session?.shop?.id ||
+    "";
+
+  const widgetPublicUrl = shopRef
+    ? `${widgetBaseUrl}/widget/tryon?shop_ref=${encodeURIComponent(shopRef)}`
+    : "";
+
+  const widgetEmbedCode = widgetPublicUrl
+    ? `<iframe
+    src="${widgetPublicUrl}"
+    width="100%"
+    height="760"
+    style="border:0;border-radius:24px;overflow:hidden;"
+    allow="camera; clipboard-write"
+    loading="lazy"
+  ></iframe>`
+    : "";
+    const widgetResponsiveEmbedCode = widgetPublicUrl
+    ? `<div style="width:100%;max-width:1200px;margin:0 auto;">
+    <div style="position:relative;width:100%;height:min(86vh,820px);min-height:620px;border-radius:24px;overflow:hidden;">
+      <iframe
+        src="${widgetPublicUrl}"
+        title="AI Try-On Widget"
+        style="position:absolute;inset:0;width:100%;height:100%;border:0;"
+        allow="camera; clipboard-write"
+        loading="lazy"
+      ></iframe>
+    </div>
+  </div>`
+    : "";
+
+  const widgetPopupEmbedCode = widgetPublicUrl
+    ? `<button
+    onclick="document.getElementById('ai-tryon-widget-modal').style.display='flex'"
+    style="padding:12px 20px;border:0;border-radius:999px;background:#2563eb;color:white;font-weight:700;cursor:pointer;"
+  >
+    Thử đồ AI
+  </button>
+  
+  <div
+    id="ai-tryon-widget-modal"
+    style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.72);align-items:center;justify-content:center;padding:20px;"
+  >
+    <div style="position:relative;width:100%;max-width:1100px;height:86vh;background:white;border-radius:24px;overflow:hidden;">
+      <button
+        onclick="document.getElementById('ai-tryon-widget-modal').style.display='none'"
+        style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border:0;border-radius:999px;background:#111827;color:white;cursor:pointer;"
+      >
+        ×
+      </button>
+      <iframe
+        src="${widgetPublicUrl}"
+        width="100%"
+        height="100%"
+        style="border:0;"
+        allow="camera; clipboard-write"
+      ></iframe>
+    </div>
+  </div>`
+    : "";
+
+  const widgetFloatingButtonEmbedCode = widgetPublicUrl
+    ? `<a
+    href="${widgetPublicUrl}"
+    target="_blank"
+    rel="noopener noreferrer"
+    style="position:fixed;right:20px;bottom:20px;z-index:9999;padding:14px 20px;border-radius:999px;background:#2563eb;color:white;text-decoration:none;font-weight:700;box-shadow:0 10px 30px rgba(37,99,235,.35);"
+  >
+    Thử đồ AI
+  </a>`
+    : "";
+
   const billableTryons = data.tryonJobs.filter((job) => job.is_billable).length;
   const includedTryons = currentPlan?.included_tryons ?? 0;
   const remainingTryons = Math.max(includedTryons - billableTryons, 0);
@@ -1292,7 +1372,10 @@ export default function ClientDashboardPage() {
       setSuccessPopupMessage(null);
     }, 1800);
   }
-
+  function copyTextToClipboard(value: string, message: string) {
+    void navigator.clipboard.writeText(value);
+    showSuccessPopup(message);
+  }
   function updateWidgetSettingsForm(patch: Partial<WidgetSettingsFormState>) {
     setWidgetSettingsMessage(null);
     setWidgetSettingsForm((current) => ({ ...current, ...patch }));
@@ -2016,7 +2099,7 @@ export default function ClientDashboardPage() {
 
             {activeDashboardTab === "widgetSettings" ? (
               <>
-                <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+                <section className="mt-6 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-slate-950/20 sm:p-6">
                   <SectionTitle
                     icon="widget"
                     title="Widget Settings"
@@ -2036,18 +2119,18 @@ export default function ClientDashboardPage() {
                     </p>
                   ) : null}
 
-                  <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-                    <div className="space-y-5">
+                  <div className="mt-6 grid min-w-0 gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="min-w-0 space-y-5">
                       <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
                         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Branding</h3>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4">
                           <label className="text-sm font-medium text-slate-300">
                             Logo URL
                             <input
                               value={widgetSettingsForm.logo_url}
                               onChange={(event) => updateWidgetSettingsForm({ logo_url: event.target.value })}
                               placeholder="https://.../logo.png"
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             />
                           </label>
 
@@ -2057,17 +2140,17 @@ export default function ClientDashboardPage() {
                               value={widgetSettingsForm.cover_image_url}
                               onChange={(event) => updateWidgetSettingsForm({ cover_image_url: event.target.value })}
                               placeholder="https://.../cover.jpg"
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             />
                           </label>
 
-                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                          <label className="text-sm font-medium text-slate-300">
                             Fallback product image URL
                             <input
                               value={widgetSettingsForm.fallback_product_image_url}
                               onChange={(event) => updateWidgetSettingsForm({ fallback_product_image_url: event.target.value })}
                               placeholder="https://.../fallback.jpg"
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             />
                           </label>
                         </div>
@@ -2075,7 +2158,7 @@ export default function ClientDashboardPage() {
 
                       <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
                         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Màu sắc</h3>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4">
                           {([
                             ["primary_color", "Primary color"],
                             ["button_color", "Button color"],
@@ -2084,12 +2167,12 @@ export default function ClientDashboardPage() {
                           ] as const).map(([key, label]) => (
                             <label key={key} className="text-sm font-medium text-slate-300">
                               {label}
-                              <div className="mt-2 flex gap-2">
+                              <div className="mt-2 flex min-w-0 gap-2">
                                 <input
                                   type="color"
                                   value={widgetSettingsForm[key]}
                                   onChange={(event) => updateWidgetSettingsForm({ [key]: event.target.value } as Partial<WidgetSettingsFormState>)}
-                                  className="h-12 w-14 rounded-2xl border border-slate-700 bg-slate-950 p-1"
+                                  className="h-12 w-14 shrink-0 rounded-2xl border border-slate-700 bg-slate-950 p-1"
                                 />
                                 <input
                                   value={widgetSettingsForm[key]}
@@ -2104,50 +2187,55 @@ export default function ClientDashboardPage() {
 
                       <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
                         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Text hiển thị</h3>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                        <div className="mt-4 grid gap-4">
+                          <label className="text-sm font-medium text-slate-300">
                             Headline
                             <input
                               value={widgetSettingsForm.headline}
                               onChange={(event) => updateWidgetSettingsForm({ headline: event.target.value })}
                               maxLength={120}
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             />
                           </label>
-                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+
+                          <label className="text-sm font-medium text-slate-300">
                             Subheadline
                             <textarea
                               value={widgetSettingsForm.subheadline}
                               onChange={(event) => updateWidgetSettingsForm({ subheadline: event.target.value })}
                               maxLength={240}
                               rows={3}
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             />
                           </label>
-                          <label className="text-sm font-medium text-slate-300">
-                            Text nút try-on
-                            <input
-                              value={widgetSettingsForm.tryon_button_text}
-                              onChange={(event) => updateWidgetSettingsForm({ tryon_button_text: event.target.value })}
-                              maxLength={40}
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
-                            />
-                          </label>
-                          <label className="text-sm font-medium text-slate-300">
-                            Text nút mua
-                            <input
-                              value={widgetSettingsForm.buy_button_text}
-                              onChange={(event) => updateWidgetSettingsForm({ buy_button_text: event.target.value })}
-                              maxLength={40}
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
-                            />
-                          </label>
+
+                          <div className="grid gap-4 2xl:grid-cols-2">
+                            <label className="text-sm font-medium text-slate-300">
+                              Text nút try-on
+                              <input
+                                value={widgetSettingsForm.tryon_button_text}
+                                onChange={(event) => updateWidgetSettingsForm({ tryon_button_text: event.target.value })}
+                                maxLength={40}
+                                className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              />
+                            </label>
+
+                            <label className="text-sm font-medium text-slate-300">
+                              Text nút mua
+                              <input
+                                value={widgetSettingsForm.buy_button_text}
+                                onChange={(event) => updateWidgetSettingsForm({ buy_button_text: event.target.value })}
+                                maxLength={40}
+                                className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              />
+                            </label>
+                          </div>
                         </div>
                       </div>
 
                       <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
                         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Hành vi widget</h3>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4">
                           <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-300">
                             Hiển thị giá
                             <input
@@ -2157,6 +2245,7 @@ export default function ClientDashboardPage() {
                               className="h-5 w-5 accent-blue-600"
                             />
                           </label>
+
                           <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-300">
                             Hiển thị nút mua
                             <input
@@ -2166,12 +2255,13 @@ export default function ClientDashboardPage() {
                               className="h-5 w-5 accent-blue-600"
                             />
                           </label>
-                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+
+                          <label className="text-sm font-medium text-slate-300">
                             Sắp xếp sản phẩm mặc định
                             <select
                               value={widgetSettingsForm.default_product_sort}
                               onChange={(event) => updateWidgetSettingsForm({ default_product_sort: event.target.value as WidgetSettingsFormState["default_product_sort"] })}
-                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                              className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
                             >
                               <option value="latest">Mới nhất</option>
                               <option value="most_tryon">Nhiều lượt thử nhất</option>
@@ -2184,42 +2274,244 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
 
-                    <div className="space-y-5">
-                      <div className="overflow-hidden rounded-3xl border border-slate-800 bg-white shadow-lg shadow-slate-950/20" style={{ backgroundColor: widgetSettingsForm.background_color, color: widgetSettingsForm.text_color }}>
-                        {widgetSettingsForm.cover_image_url ? (
-                          <img src={widgetSettingsForm.cover_image_url} alt="Widget cover preview" className="h-40 w-full object-cover" />
-                        ) : (
-                          <div className="flex h-40 items-center justify-center bg-slate-100 text-sm text-slate-500">Cover preview</div>
-                        )}
+                    <div className="min-w-0 space-y-5 overflow-hidden">
+                      <div
+                        className="w-full max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-white shadow-lg shadow-slate-950/20"
+                        style={{
+                          backgroundColor: widgetSettingsForm.background_color,
+                          color: widgetSettingsForm.text_color,
+                        }}
+                      >
+                        {widgetSettingsForm.cover_image_url.trim() ? (
+                          <div className="h-40 w-full overflow-hidden bg-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={widgetSettingsForm.cover_image_url}
+                              alt="Widget cover preview"
+                              className="h-full w-full object-cover"
+                              onError={(event) => {
+                                event.currentTarget.style.display = "none";
+                              }}
+                            />
+                          </div>
+                        ) : null}
+
                         <div className="p-5">
-                          <div className="flex items-center gap-3">
-                            {widgetSettingsForm.logo_url ? (
-                              <img src={widgetSettingsForm.logo_url} alt="Logo preview" className="h-12 w-12 rounded-2xl object-cover" />
+                          <div className="flex min-w-0 items-start gap-3">
+                            {widgetSettingsForm.logo_url.trim() ? (
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-slate-200">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={widgetSettingsForm.logo_url}
+                                  alt="Logo preview"
+                                  className="h-full w-full object-cover"
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              </div>
                             ) : (
-                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-200 text-xs text-slate-500">Logo</div>
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-200 text-xs text-slate-500">
+                                Logo
+                              </div>
                             )}
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: widgetSettingsForm.primary_color }}>AI Try-On</p>
-                              <h3 className="text-xl font-bold">{widgetSettingsForm.headline}</h3>
+
+                            <div className="min-w-0">
+                              <p
+                                className="text-xs font-semibold uppercase tracking-[0.2em]"
+                                style={{ color: widgetSettingsForm.primary_color }}
+                              >
+                                AI Try-On
+                              </p>
+                              <h3 className="mt-1 break-words text-xl font-bold">
+                                {widgetSettingsForm.headline || defaultWidgetSettingsForm.headline}
+                              </h3>
+                              <p className="mt-3 break-words text-sm leading-6 opacity-80">
+                                {widgetSettingsForm.subheadline || defaultWidgetSettingsForm.subheadline}
+                              </p>
+                              <button
+                                type="button"
+                                className="mt-5 rounded-2xl px-5 py-3 text-sm font-bold text-white"
+                                style={{ backgroundColor: widgetSettingsForm.button_color }}
+                              >
+                                {widgetSettingsForm.tryon_button_text || defaultWidgetSettingsForm.tryon_button_text}
+                              </button>
                             </div>
                           </div>
-                          <p className="mt-3 text-sm opacity-80">{widgetSettingsForm.subheadline}</p>
-                          <button type="button" className="mt-5 rounded-2xl px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: widgetSettingsForm.button_color }}>
-                            {widgetSettingsForm.tryon_button_text}
-                          </button>
                         </div>
                       </div>
 
-                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
-                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Ghi chú bảo mật</h3>
-                        <p className="mt-3 text-sm leading-6 text-slate-400">
-                          Backend sẽ validate URL chỉ nhận http/https và màu đúng HEX. Không cho nhập custom HTML/CSS/JS để tránh phá layout hoặc XSS.
-                        </p>
-                      </div>
+               
+
+                        <div className="mt-5 w-full max-w-full overflow-hidden rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                          <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-blue-100">
+                                Link widget public
+                              </p>
+
+                              {widgetPublicUrl ? (
+                                <p className="mt-2 max-w-full break-all text-sm text-blue-200">
+                                  {widgetPublicUrl}
+                                </p>
+                              ) : (
+                                <p className="mt-2 text-sm text-slate-400">
+                                  Chưa tạo được link widget vì thiếu shop_ref hoặc shop id.
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              {widgetPublicUrl ? (
+                                <>
+                                  <a
+                                    href={widgetPublicUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center rounded-2xl border border-blue-400/40 px-4 py-2.5 text-sm font-semibold text-blue-100 transition hover:bg-blue-500/20"
+                                  >
+                                    Mở widget
+                                  </a>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => copyTextToClipboard(widgetPublicUrl, "Đã copy link widget.")}
+                                    className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+                                  >
+                                    Copy link
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 w-full max-w-full overflow-hidden rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4">
+                          <div className="flex min-w-0 flex-col gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-violet-100">
+                                Code nhúng website
+                              </p>
+
+                              <p className="mt-2 break-words text-sm leading-6 text-violet-200">
+                                Chọn kiểu nhúng phù hợp với website của shop. Iframe phù hợp nhất cho landing page, popup phù hợp cho trang sản phẩm, floating button phù hợp để gắn toàn site.
+                              </p>
+                            </div>
+
+                            {widgetPublicUrl ? (
+                              <div className="mt-3 grid min-w-0 gap-4">
+                                <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-white">
+                                        1. Responsive iframe
+                                      </p>
+                                      <p className="mt-1 break-words text-xs text-slate-400">
+                                        Dùng cho landing page hoặc section riêng. Chiều cao tự co theo màn hình để tránh vỡ layout.
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => copyTextToClipboard(widgetResponsiveEmbedCode, "Đã copy responsive iframe.")}
+                                      className="shrink-0 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500"
+                                    >
+                                      Copy code
+                                    </button>
+                                  </div>
+
+                                  <pre className="mt-3 max-h-52 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-800 bg-black/40 p-4 text-xs leading-5 text-slate-200">
+                                    <code>{widgetResponsiveEmbedCode}</code>
+                                  </pre>
+                                </div>
+
+                                <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-white">
+                                        2. Simple iframe
+                                      </p>
+                                      <p className="mt-1 break-words text-xs text-slate-400">
+                                        Bản iframe ngắn, dễ nhúng vào CMS hoặc page builder.
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => copyTextToClipboard(widgetEmbedCode, "Đã copy iframe.")}
+                                      className="shrink-0 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500"
+                                    >
+                                      Copy code
+                                    </button>
+                                  </div>
+
+                                  <pre className="mt-3 max-h-52 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-800 bg-black/40 p-4 text-xs leading-5 text-slate-200">
+                                    <code>{widgetEmbedCode}</code>
+                                  </pre>
+                                </div>
+
+                                <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-white">
+                                        3. Popup button
+                                      </p>
+                                      <p className="mt-1 break-words text-xs text-slate-400">
+                                        Hiển thị một nút “Thử đồ AI”, khi click sẽ mở widget dạng popup.
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => copyTextToClipboard(widgetPopupEmbedCode, "Đã copy popup embed.")}
+                                      className="shrink-0 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500"
+                                    >
+                                      Copy code
+                                    </button>
+                                  </div>
+
+                                  <pre className="mt-3 max-h-52 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-800 bg-black/40 p-4 text-xs leading-5 text-slate-200">
+                                    <code>{widgetPopupEmbedCode}</code>
+                                  </pre>
+                                </div>
+
+                                <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-white">
+                                        4. Floating button
+                                      </p>
+                                      <p className="mt-1 break-words text-xs text-slate-400">
+                                        Gắn nút nổi ở góc phải dưới website, click sẽ mở widget ở tab mới.
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => copyTextToClipboard(widgetFloatingButtonEmbedCode, "Đã copy floating button.")}
+                                      className="shrink-0 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500"
+                                    >
+                                      Copy code
+                                    </button>
+                                  </div>
+
+                                  <pre className="mt-3 max-h-52 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-800 bg-black/40 p-4 text-xs leading-5 text-slate-200">
+                                    <code>{widgetFloatingButtonEmbedCode}</code>
+                                  </pre>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-sm text-slate-400">
+                                Chưa tạo được code nhúng vì thiếu link widget.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      
                     </div>
                   </div>
 
-                  <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-5">
+                  <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:justify-end">
                     <button
                       type="button"
                       onClick={() => setWidgetSettingsForm(widgetSettingsToForm(widgetSettings))}
@@ -2240,6 +2532,8 @@ export default function ClientDashboardPage() {
                 </section>
               </>
             ) : null}
+
+
 
             {activeDashboardTab === "products" ? (
               <>
@@ -2799,7 +3093,9 @@ export default function ClientDashboardPage() {
               >
                 {savingProduct ? "Đang lưu..." : "Lưu thay đổi"}
               </button>
+              
             </div>
+            
           </div>
         </div>
       ) : null}

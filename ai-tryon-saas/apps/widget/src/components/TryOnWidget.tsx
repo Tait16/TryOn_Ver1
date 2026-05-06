@@ -282,7 +282,7 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
           className="overflow-hidden rounded-3xl shadow-sm"
           style={{ backgroundColor: primaryColor, color: "#ffffff" }}
         >
-          {widgetConfig?.shop.cover_image_url ? (
+          {widgetConfig?.shop.cover_image_url?.trim() ? (
             <div className="h-44 w-full overflow-hidden bg-black/10 sm:h-56">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
