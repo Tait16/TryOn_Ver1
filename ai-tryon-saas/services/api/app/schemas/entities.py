@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ORMBase(BaseModel):
@@ -379,3 +379,115 @@ class MonthlyUsageResponse(ORMBase):
     rejected_tryons: int
     created_at: datetime
     updated_at: datetime
+
+
+
+
+# =========================
+# Shop Widget Settings
+# =========================
+
+WidgetProductSort = Literal["latest", "most_tryon", "price_asc", "price_desc", "name_asc"]
+
+
+def _validate_hex_color(value: str) -> str:
+    if len(value) != 7 or not value.startswith("#"):
+        raise ValueError("Color must be HEX format #RRGGBB")
+    hex_part = value[1:]
+    if not all(char in "0123456789abcdefABCDEF" for char in hex_part):
+        raise ValueError("Color must be HEX format #RRGGBB")
+    return value
+
+
+def _validate_http_url(value: str | None) -> str | None:
+    if value is None or value == "":
+        return value
+    if not (value.startswith("http://") or value.startswith("https://")):
+        raise ValueError("URL must start with http:// or https://")
+    return value
+
+
+class ShopWidgetSettingsCreate(BaseModel):
+    shop_id: uuid.UUID
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+    fallback_product_image_url: str | None = None
+    primary_color: str = "#2563EB"
+    button_color: str = "#111827"
+    background_color: str = "#FFFFFF"
+    text_color: str = "#0F172A"
+    headline: str = Field(default="Thử đồ AI trước khi mua", max_length=120)
+    subheadline: str = Field(default="Upload ảnh của bạn và xem sản phẩm phù hợp thế nào", max_length=240)
+    tryon_button_text: str = Field(default="Thử đồ AI", max_length=40)
+    buy_button_text: str = Field(default="Mua ngay", max_length=40)
+    show_price: bool = True
+    show_buy_button: bool = True
+    default_product_sort: WidgetProductSort = "latest"
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("primary_color", "button_color", "background_color", "text_color")
+    @classmethod
+    def validate_colors(cls, value: str) -> str:
+        return _validate_hex_color(value)
+
+    @field_validator("logo_url", "cover_image_url", "fallback_product_image_url")
+    @classmethod
+    def validate_urls(cls, value: str | None) -> str | None:
+        return _validate_http_url(value)
+
+
+class ShopWidgetSettingsUpdate(BaseModel):
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+    fallback_product_image_url: str | None = None
+    primary_color: str | None = None
+    button_color: str | None = None
+    background_color: str | None = None
+    text_color: str | None = None
+    headline: str | None = Field(default=None, max_length=120)
+    subheadline: str | None = Field(default=None, max_length=240)
+    tryon_button_text: str | None = Field(default=None, max_length=40)
+    buy_button_text: str | None = Field(default=None, max_length=40)
+    show_price: bool | None = None
+    show_buy_button: bool | None = None
+    default_product_sort: WidgetProductSort | None = None
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("primary_color", "button_color", "background_color", "text_color")
+    @classmethod
+    def validate_optional_colors(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_hex_color(value)
+
+    @field_validator("logo_url", "cover_image_url", "fallback_product_image_url")
+    @classmethod
+    def validate_optional_urls(cls, value: str | None) -> str | None:
+        return _validate_http_url(value)
+
+
+class ShopWidgetSettingsResponse(ORMBase):
+    id: uuid.UUID
+    shop_id: uuid.UUID
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+    fallback_product_image_url: str | None = None
+    primary_color: str
+    button_color: str
+    background_color: str
+    text_color: str
+    headline: str
+    subheadline: str
+    tryon_button_text: str
+    buy_button_text: str
+    show_price: bool
+    show_buy_button: bool
+    default_product_sort: str
+    metadata: dict[str, Any] | None = Field(default=None, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+# =========================
+# Body Models
+# =========================
+ 

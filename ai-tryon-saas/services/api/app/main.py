@@ -6,6 +6,7 @@ from app.routes.auth import router as auth_router
 from app.routes.entities import router as entities_router
 from app.routes.client_auth import router as client_auth_router
 from app.routes.widget import router as widget_router
+from app.routes.shop_widget_settings import router as shop_widget_settings_router
 
 _cors_list = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
@@ -40,4 +41,5 @@ def health_check():
 app.include_router(auth_router)
 app.include_router(client_auth_router)
 app.include_router(widget_router)
+app.include_router(shop_widget_settings_router)
 app.include_router(entities_router)

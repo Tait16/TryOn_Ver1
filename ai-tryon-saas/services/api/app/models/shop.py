@@ -42,3 +42,4 @@ class Shop(Base):
     usage_events = relationship("UsageEvent", back_populates="shop", cascade="all, delete-orphan")
     subscriptions = relationship("ShopSubscription", back_populates="shop", cascade="all, delete-orphan")
     monthly_usages = relationship("MonthlyUsage", back_populates="shop", cascade="all, delete-orphan")
+    shop_widget_settings = relationship("ShopWidgetSettings", back_populates="shop", cascade="all, delete-orphan", uselist=False)

@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.models.product import Product
 from app.models.product_asset import ProductAsset
 from app.models.shop import Shop
+from app.models.shop_widget_settings import ShopWidgetSettings
 from app.models.tryon_job import TryOnJob
 from app.services.ai_providers.kling_kolors import KlingKolorsError, KlingKolorsProvider
 
@@ -147,12 +148,89 @@ def _shop_to_response(shop: Shop) -> dict:
     }
 
 
+def _get_or_create_widget_settings(db: Session, shop_id: uuid.UUID) -> ShopWidgetSettings:
+    settings = db.query(ShopWidgetSettings).filter(ShopWidgetSettings.shop_id == shop_id).first()
+    if settings:
+        return settings
+
+    settings = ShopWidgetSettings(shop_id=shop_id)
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+def _widget_settings_to_response(shop: Shop, settings: ShopWidgetSettings) -> dict:
+    return {
+        "shop": {
+            "id": str(shop.id),
+            "name": shop.name,
+            "domain": shop.domain,
+            "status": shop.status,
+            "plan": shop.plan,
+            "logo_url": settings.logo_url,
+            "cover_image_url": settings.cover_image_url,
+        },
+        "theme": {
+            "primary_color": settings.primary_color,
+            "button_color": settings.button_color,
+            "background_color": settings.background_color,
+            "text_color": settings.text_color,
+        },
+        "labels": {
+            "headline": settings.headline,
+            "subheadline": settings.subheadline,
+            "tryon_button_text": settings.tryon_button_text,
+            "buy_button_text": settings.buy_button_text,
+        },
+        "behavior": {
+            "show_price": settings.show_price,
+            "show_buy_button": settings.show_buy_button,
+            "default_product_sort": settings.default_product_sort,
+            "fallback_product_image_url": settings.fallback_product_image_url,
+        },
+    }
+
+
 class WidgetShopResponse(BaseModel):
     id: str
     name: str
     domain: str | None = None
     status: str
     plan: str
+
+
+class WidgetConfigShopResponse(WidgetShopResponse):
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+
+
+class WidgetThemeResponse(BaseModel):
+    primary_color: str
+    button_color: str
+    background_color: str
+    text_color: str
+
+
+class WidgetLabelsResponse(BaseModel):
+    headline: str
+    subheadline: str
+    tryon_button_text: str
+    buy_button_text: str
+
+
+class WidgetBehaviorResponse(BaseModel):
+    show_price: bool
+    show_buy_button: bool
+    default_product_sort: str
+    fallback_product_image_url: str | None = None
+
+
+class WidgetConfigResponse(BaseModel):
+    shop: WidgetConfigShopResponse
+    theme: WidgetThemeResponse
+    labels: WidgetLabelsResponse
+    behavior: WidgetBehaviorResponse
 
 
 class WidgetProductResponse(BaseModel):
@@ -220,6 +298,17 @@ def _job_to_response(job: TryOnJob) -> dict:
         "created_at": job.created_at,
         "updated_at": job.updated_at,
     }
+
+
+@router.get(
+    "/shops/{shop_ref}/config",
+    response_model=WidgetConfigResponse,
+    summary="Get public widget branding/config for a shop",
+)
+def get_widget_config(shop_ref: str, db: Session = Depends(get_db)):
+    shop = _resolve_shop(db, shop_ref)
+    settings = _get_or_create_widget_settings(db, shop.id)
+    return _widget_settings_to_response(shop, settings)
 
 
 @router.get(

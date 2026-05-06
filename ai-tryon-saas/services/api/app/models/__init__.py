@@ -9,6 +9,7 @@ from app.models.plans import Plan
 from app.models.shop_subscriptions import ShopSubscription
 from app.models.monthly_usages import MonthlyUsage
 from app.models.accounts import Accounts
+from app.models.shop_widget_settings import ShopWidgetSettings
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "TryOnJob",
     "MonthlyUsage",
     "Accounts",
+    "ShopWidgetSettings",
 ]

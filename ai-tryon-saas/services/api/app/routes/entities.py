@@ -18,6 +18,7 @@ from app.models.plans import Plan
 from app.models.shop_subscriptions import ShopSubscription
 from app.models.monthly_usages import MonthlyUsage
 from app.models.accounts import Accounts
+from app.models.shop_widget_settings import ShopWidgetSettings
 from app.schemas.entities import (
     ShopCreate,
     ShopUpdate,
@@ -52,6 +53,9 @@ from app.schemas.entities import (
     AccountsCreate,
     AccountsUpdate,
     AccountsResponse,
+    ShopWidgetSettingsCreate,
+    ShopWidgetSettingsUpdate,
+    ShopWidgetSettingsResponse,
 )
 
 
@@ -270,3 +274,15 @@ register_crud_routes(
     update_schema=AccountsUpdate,
     response_schema=AccountsResponse,
 )
+
+
+register_crud_routes(
+    path="/shop-widget-settings",
+    name="Shop Widget Settings",
+    model=ShopWidgetSettings,
+    create_schema=ShopWidgetSettingsCreate,
+    update_schema=ShopWidgetSettingsUpdate,
+    response_schema=ShopWidgetSettingsResponse,
+    field_map={"metadata": "metadata_"},
+)
+

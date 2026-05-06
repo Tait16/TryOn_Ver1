@@ -7,10 +7,12 @@ import UploadUserImage from "@/components/UploadUserImage";
 import {
   createTryOnJob,
   getTryOnJob,
+  getWidgetConfig,
   getWidgetProduct,
   getWidgetProducts,
   normalizePublicImageUrl,
   type TryOnJob,
+  type WidgetConfig,
   type WidgetProduct,
   type WidgetShop,
 } from "@/lib/widget-api";
@@ -23,6 +25,7 @@ type Props = {
 
 export default function TryOnWidget({ shopRef, productId }: Props) {
   const [shop, setShop] = useState<WidgetShop | null>(null);
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
   const [products, setProducts] = useState<WidgetProduct[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(productId || null);
   const [userImageUrl, setUserImageUrl] = useState("");
@@ -35,6 +38,15 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<"6" | "12" | "24" | "48" | "all">("6");
+
+  const theme = widgetConfig?.theme;
+  const labels = widgetConfig?.labels;
+  const behavior = widgetConfig?.behavior;
+
+  const primaryColor = theme?.primary_color || "#2563eb";
+  const buttonColor = theme?.button_color || "#2563eb";
+  const backgroundColor = theme?.background_color || "#f8fafc";
+  const textColor = theme?.text_color || "#0f172a";
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === selectedProductId) || null,
@@ -50,10 +62,33 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
     return Array.from(new Set(uniqueCategories)).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
+  const sortedProducts = useMemo(() => {
+    const sort = behavior?.default_product_sort || "latest";
+
+    return [...products].sort((a, b) => {
+      if (sort === "price_asc" || sort === "price_desc") {
+        const priceA = Number(a.price ?? 0);
+        const priceB = Number(b.price ?? 0);
+        const safePriceA = Number.isFinite(priceA) ? priceA : 0;
+        const safePriceB = Number.isFinite(priceB) ? priceB : 0;
+
+        return sort === "price_asc" ? safePriceA - safePriceB : safePriceB - safePriceA;
+      }
+
+      if (sort === "name_asc") {
+        return a.name.localeCompare(b.name, "vi", { sensitivity: "base", numeric: true });
+      }
+
+      // Backend currently returns products in default order.
+      // Keep that order for latest/most_tryon until the catalog API returns created_at/tryon_count.
+      return 0;
+    });
+  }, [behavior?.default_product_sort, products]);
+
   const filteredProducts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    return products.filter((product) => {
+    return sortedProducts.filter((product) => {
       const matchesName = normalizedSearch
         ? product.name.toLowerCase().includes(normalizedSearch)
         : true;
@@ -63,7 +98,7 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
 
       return matchesName && matchesCategory;
     });
-  }, [products, searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, sortedProducts]);
 
   const pageSize = itemsPerPage === "all" ? filteredProducts.length || 1 : Number(itemsPerPage);
 
@@ -108,14 +143,24 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
         }
 
         if (productId) {
-          const data = await getWidgetProduct(productId, shopRef);
+          const [config, data] = await Promise.all([
+            getWidgetConfig(shopRef),
+            getWidgetProduct(productId, shopRef),
+          ]);
+
           if (ignore) return;
+          setWidgetConfig(config);
           setShop(data.shop);
           setProducts([data.product]);
           setSelectedProductId(data.product.id);
         } else {
-          const data = await getWidgetProducts(shopRef);
+          const [config, data] = await Promise.all([
+            getWidgetConfig(shopRef),
+            getWidgetProducts(shopRef),
+          ]);
+
           if (ignore) return;
+          setWidgetConfig(config);
           setShop(data.shop);
           setProducts(data.products);
           setSelectedProductId((current) => current || data.products[0]?.id || null);
@@ -228,18 +273,52 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 text-slate-950 sm:p-6">
+    <main
+      className="min-h-screen p-4 sm:p-6"
+      style={{ backgroundColor, color: textColor }}
+    >
       <div className="mx-auto max-w-5xl">
-        <header className="rounded-3xl bg-slate-950 p-5 text-white shadow-sm sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-blue-300">AI Try-On</p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold sm:text-3xl">Mặc thử sản phẩm từ {shop?.name || "Shop này"} với AI</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-300">
-                Chọn một sản phẩm, tải lên ảnh của bạn, và xem kết quả.
-                Thử với sản phẩm nổi bật
-                Ghim sản phẩm lên top           
-              </p>
+        <header
+          className="overflow-hidden rounded-3xl shadow-sm"
+          style={{ backgroundColor: primaryColor, color: "#ffffff" }}
+        >
+          {widgetConfig?.shop.cover_image_url ? (
+            <div className="h-44 w-full overflow-hidden bg-black/10 sm:h-56">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={widgetConfig.shop.cover_image_url}
+                alt={widgetConfig.shop.name}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : null}
+
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex items-start gap-4">
+                {widgetConfig?.shop.logo_url ? (
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={widgetConfig.shop.logo_url}
+                      alt={widgetConfig.shop.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : null}
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/75">
+                    AI Try-On
+                  </p>
+                  <h1 className="mt-3 text-2xl font-bold sm:text-3xl">
+                    {labels?.headline || `Mặc thử sản phẩm từ ${shop?.name || "Shop này"} với AI`}
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm text-white/80">
+                    {labels?.subheadline || "Chọn một sản phẩm, tải lên ảnh của bạn, và xem kết quả."}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </header>
@@ -309,6 +388,7 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
                         product={product}
                         selected={product.id === selectedProductId}
                         onSelect={handleSelectProduct}
+                        config={widgetConfig}
                       />
                     ))}
                   </div>
@@ -388,9 +468,10 @@ export default function TryOnWidget({ shopRef, productId }: Props) {
                 type="button"
                 disabled={!selectedProduct || !userImageUrl || submitting}
                 onClick={handleGenerate}
-                className="w-full rounded-3xl bg-blue-600 px-5 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ backgroundColor: buttonColor }}
+                className="w-full rounded-3xl px-5 py-4 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? "Đang mặc thử..." : "Mặc thử"}
+                {submitting ? "Đang mặc thử..." : labels?.tryon_button_text || "Mặc thử"}
               </button>
 
               <TryOnResult

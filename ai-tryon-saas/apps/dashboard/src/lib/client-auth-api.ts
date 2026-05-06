@@ -89,6 +89,46 @@ export type TryonJob = {
   updated_at: string;
 };
 
+export type ShopWidgetSettings = {
+  id: string;
+  shop_id: string;
+  logo_url: string | null;
+  cover_image_url: string | null;
+  fallback_product_image_url: string | null;
+  primary_color: string;
+  button_color: string;
+  background_color: string;
+  text_color: string;
+  headline: string;
+  subheadline: string;
+  tryon_button_text: string;
+  buy_button_text: string;
+  show_price: boolean;
+  show_buy_button: boolean;
+  default_product_sort: "latest" | "most_tryon" | "price_asc" | "price_desc" | "name_asc" | string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShopWidgetSettingsUpdatePayload = Partial<{
+  logo_url: string | null;
+  cover_image_url: string | null;
+  fallback_product_image_url: string | null;
+  primary_color: string;
+  button_color: string;
+  background_color: string;
+  text_color: string;
+  headline: string;
+  subheadline: string;
+  tryon_button_text: string;
+  buy_button_text: string;
+  show_price: boolean;
+  show_buy_button: boolean;
+  default_product_sort: "latest" | "most_tryon" | "price_asc" | "price_desc" | "name_asc";
+  metadata: Record<string, unknown> | null;
+}>;
+
 export async function clientLoginRequest(email: string, password: string) {
   const { data } = await api.post<ClientAuthPayload>("/api/v1/client/login", {
     email,
@@ -166,5 +206,15 @@ export async function updateProductAsset(assetId: string, body: ProductAssetUpda
 
 export async function deleteProductAsset(assetId: string) {
   const { data } = await api.delete<ProductAsset>(`/api/v1/product-assets/${assetId}`);
+  return data;
+}
+
+export async function fetchShopWidgetSettings() {
+  const { data } = await api.get<ShopWidgetSettings>("/api/v1/shop-widget-settings/me");
+  return data;
+}
+
+export async function saveShopWidgetSettings(body: ShopWidgetSettingsUpdatePayload) {
+  const { data } = await api.put<ShopWidgetSettings>("/api/v1/shop-widget-settings/me", body);
   return data;
 }

@@ -26,6 +26,34 @@ export type WidgetCatalogResponse = {
   products: WidgetProduct[];
 };
 
+export type WidgetConfig = {
+  shop: {
+    id: string;
+    name: string;
+    domain: string | null;
+    logo_url: string | null;
+    cover_image_url: string | null;
+  };
+  theme: {
+    primary_color: string;
+    button_color: string;
+    background_color: string;
+    text_color: string;
+  };
+  labels: {
+    headline: string;
+    subheadline: string;
+    tryon_button_text: string;
+    buy_button_text: string;
+  };
+  behavior: {
+    show_price: boolean;
+    show_buy_button: boolean;
+    default_product_sort: "latest" | "most_tryon" | "price_asc" | "price_desc" | "name_asc" | string;
+    fallback_product_image_url: string | null;
+  };
+};
+
 export type WidgetProductResponse = {
   shop: WidgetShop;
   product: WidgetProduct;
@@ -93,6 +121,13 @@ export function normalizePublicImageUrl(value: string) {
   } catch {
     return "";
   }
+}
+
+
+export async function getWidgetConfig(shopRef: string) {
+  return requestJson<WidgetConfig>(
+    `/api/v1/widget/shops/${encodeURIComponent(shopRef)}/config`,
+  );
 }
 
 export async function getWidgetProducts(shopRef: string) {

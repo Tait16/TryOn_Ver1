@@ -1,9 +1,10 @@
-import type { WidgetProduct } from "@/lib/widget-api";
+import type { WidgetConfig, WidgetProduct } from "@/lib/widget-api";
 
 type Props = {
   product: WidgetProduct;
   selected: boolean;
   onSelect: (product: WidgetProduct) => void;
+  config?: WidgetConfig | null;
 };
 
 function formatPrice(product: WidgetProduct) {
@@ -23,9 +24,13 @@ function formatPrice(product: WidgetProduct) {
   }
 }
 
-export default function ProductPreview({ product, selected, onSelect }: Props) {
+export default function ProductPreview({ product, selected, onSelect, config }: Props) {
   const price = formatPrice(product);
-  const imageUrl = product.thumbnail_url || product.image_url;
+  const imageUrl = product.thumbnail_url || product.image_url || config?.behavior.fallback_product_image_url;
+  const buttonColor = config?.theme.button_color || "#0f172a";
+  const showPrice = config?.behavior.show_price ?? true;
+  const showBuyButton = config?.behavior.show_buy_button ?? true;
+  const buyButtonText = config?.labels.buy_button_text || "Mua ngay";
 
   return (
     <div
@@ -70,19 +75,24 @@ export default function ProductPreview({ product, selected, onSelect }: Props) {
 
         <div className="mt-auto pt-4">
           <div className="flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
-              {price || "Liên hệ"}
-            </p>
+            {showPrice ? (
+              <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                {price || "Liên hệ"}
+              </p>
+            ) : (
+              <span />
+            )}
 
-            {product.product_url ? (
+            {showBuyButton && product.product_url ? (
               <a
                 href={product.product_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(event) => event.stopPropagation()}
-                className="shrink-0 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700"
+                style={{ backgroundColor: buttonColor }}
+                className="shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
               >
-                Mua
+                {buyButtonText}
               </a>
             ) : null}
           </div>

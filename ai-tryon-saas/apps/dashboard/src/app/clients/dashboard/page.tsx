@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/auth-api";
 import { clearClientAuth, readClientAuth } from "@/lib/client-auth-storage";
-import { createProductAsset, deleteProductAsset, updateProduct, updateProductAsset } from "@/lib/client-auth-api";
-import type { ClientShop, ClientShopUser, Plan, Product, ProductAsset, ShopSubscription, TryonJob } from "@/lib/client-auth-api";
+import { createProductAsset, deleteProductAsset, fetchShopWidgetSettings, saveShopWidgetSettings, updateProduct, updateProductAsset } from "@/lib/client-auth-api";
+import type { ClientShop, ClientShopUser, Plan, Product, ProductAsset, ShopSubscription, ShopWidgetSettings, TryonJob } from "@/lib/client-auth-api";
 import { formatApiError } from "@/lib/format-api-error";
 
 
@@ -44,7 +44,7 @@ type TopTryonProductRow = {
   latestTryonAt: string | null;
 };
 
-type DashboardTab = "overview" | "products" | "analytics" | "tryonInsights";
+type DashboardTab = "overview" | "products" | "analytics" | "tryonInsights" | "widgetSettings";
 
 type ProductSortKey = "name" | "category" | "price" | "imageCount" | "status" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -77,6 +77,7 @@ const dashboardTabs: { id: DashboardTab; label: string; description: string; ico
   { id: "products", label: "Products", description: "Quản lý sản phẩm", icon: "box" },
   { id: "analytics", label: "Widget Health", description: "Tình trạng widget & ảnh", icon: "shield" },
   { id: "tryonInsights", label: "Try-on Insights", description: "Cơ hội từ lượt mặc thử", icon: "sparkles" },
+  { id: "widgetSettings", label: "Widget Settings", description: "Branding & giao diện", icon: "widget" },
 ];
 
 type DailyTryonRow = {
@@ -134,7 +135,64 @@ type ProductAssetFormState = {
   markedForDeletion: boolean;
 };
 
+type WidgetSettingsFormState = {
+  logo_url: string;
+  cover_image_url: string;
+  fallback_product_image_url: string;
+  primary_color: string;
+  button_color: string;
+  background_color: string;
+  text_color: string;
+  headline: string;
+  subheadline: string;
+  tryon_button_text: string;
+  buy_button_text: string;
+  show_price: boolean;
+  show_buy_button: boolean;
+  default_product_sort: "latest" | "most_tryon" | "price_asc" | "price_desc" | "name_asc";
+};
+
 const customCategoryValue = "__custom_category__";
+
+const defaultWidgetSettingsForm: WidgetSettingsFormState = {
+  logo_url: "",
+  cover_image_url: "",
+  fallback_product_image_url: "",
+  primary_color: "#2563EB",
+  button_color: "#111827",
+  background_color: "#FFFFFF",
+  text_color: "#0F172A",
+  headline: "Thử đồ AI trước khi mua",
+  subheadline: "Upload ảnh của bạn và xem sản phẩm phù hợp thế nào",
+  tryon_button_text: "Thử đồ AI",
+  buy_button_text: "Mua ngay",
+  show_price: true,
+  show_buy_button: true,
+  default_product_sort: "latest",
+};
+
+function widgetSettingsToForm(settings: ShopWidgetSettings | null): WidgetSettingsFormState {
+  if (!settings) return defaultWidgetSettingsForm;
+
+  return {
+    logo_url: settings.logo_url ?? "",
+    cover_image_url: settings.cover_image_url ?? "",
+    fallback_product_image_url: settings.fallback_product_image_url ?? "",
+    primary_color: settings.primary_color || defaultWidgetSettingsForm.primary_color,
+    button_color: settings.button_color || defaultWidgetSettingsForm.button_color,
+    background_color: settings.background_color || defaultWidgetSettingsForm.background_color,
+    text_color: settings.text_color || defaultWidgetSettingsForm.text_color,
+    headline: settings.headline || defaultWidgetSettingsForm.headline,
+    subheadline: settings.subheadline || defaultWidgetSettingsForm.subheadline,
+    tryon_button_text: settings.tryon_button_text || defaultWidgetSettingsForm.tryon_button_text,
+    buy_button_text: settings.buy_button_text || defaultWidgetSettingsForm.buy_button_text,
+    show_price: settings.show_price,
+    show_buy_button: settings.show_buy_button,
+    default_product_sort: ["latest", "most_tryon", "price_asc", "price_desc", "name_asc"].includes(settings.default_product_sort)
+      ? (settings.default_product_sort as WidgetSettingsFormState["default_product_sort"])
+      : "latest",
+  };
+}
 
 function productToForm(product: Product): ProductFormState {
   return {
@@ -525,6 +583,10 @@ export default function ClientDashboardPage() {
   const [savingProduct, setSavingProduct] = useState(false);
   const [productMessage, setProductMessage] = useState<string | null>(null);
   const [successPopupMessage, setSuccessPopupMessage] = useState<string | null>(null);
+  const [widgetSettings, setWidgetSettings] = useState<ShopWidgetSettings | null>(null);
+  const [widgetSettingsForm, setWidgetSettingsForm] = useState<WidgetSettingsFormState>(defaultWidgetSettingsForm);
+  const [savingWidgetSettings, setSavingWidgetSettings] = useState(false);
+  const [widgetSettingsMessage, setWidgetSettingsMessage] = useState<string | null>(null);
   const [topTryonSearch, setTopTryonSearch] = useState("");
   const [topTryonCategoryFilter, setTopTryonCategoryFilter] = useState("all");
   const [topTryonPage, setTopTryonPage] = useState(1);
@@ -556,12 +618,13 @@ export default function ClientDashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [productsResponse, assetsResponse, plansResponse, subscriptionsResponse, tryonJobsResponse] = await Promise.all([
+        const [productsResponse, assetsResponse, plansResponse, subscriptionsResponse, tryonJobsResponse, widgetSettingsResponse] = await Promise.all([
           api.get<Product[]>("/api/v1/products", { params: { skip: 0, limit: 1000 } }),
           api.get<ProductAsset[]>("/api/v1/product-assets", { params: { skip: 0, limit: 1000 } }),
           api.get<Plan[]>("/api/v1/plans", { params: { skip: 0, limit: 1000 } }),
           api.get<ShopSubscription[]>("/api/v1/shop-subscriptions", { params: { skip: 0, limit: 1000 } }),
           api.get<TryonJob[]>("/api/v1/tryon-jobs", { params: { skip: 0, limit: 1000 } }),
+          fetchShopWidgetSettings().catch(() => null),
         ]);
 
         const shopId = currentSession.shop.id;
@@ -579,6 +642,11 @@ export default function ClientDashboardPage() {
           subscriptions: subscriptionsResponse.data.filter((sub) => sub.shop_id === shopId),
           tryonJobs: tryonJobsResponse.data.filter((job) => job.shop_id === shopId),
         });
+
+        if (widgetSettingsResponse) {
+          setWidgetSettings(widgetSettingsResponse);
+          setWidgetSettingsForm(widgetSettingsToForm(widgetSettingsResponse));
+        }
       } catch (err: unknown) {
         setError(formatApiError(err, "Không tải được dữ liệu dashboard client."));
       } finally {
@@ -1223,6 +1291,61 @@ export default function ClientDashboardPage() {
     window.setTimeout(() => {
       setSuccessPopupMessage(null);
     }, 1800);
+  }
+
+  function updateWidgetSettingsForm(patch: Partial<WidgetSettingsFormState>) {
+    setWidgetSettingsMessage(null);
+    setWidgetSettingsForm((current) => ({ ...current, ...patch }));
+  }
+
+  async function handleSaveWidgetSettings() {
+    if (!isShopOwner) {
+      setWidgetSettingsMessage("Chỉ chủ shop/admin mới được sửa Widget Settings.");
+      return;
+    }
+
+    const hexColorPattern = /^#[0-9A-Fa-f]{6}$/;
+    const colorFields = [
+      widgetSettingsForm.primary_color,
+      widgetSettingsForm.button_color,
+      widgetSettingsForm.background_color,
+      widgetSettingsForm.text_color,
+    ];
+
+    if (colorFields.some((value) => !hexColorPattern.test(value))) {
+      setWidgetSettingsMessage("Màu phải đúng định dạng HEX, ví dụ #2563EB.");
+      return;
+    }
+
+    setSavingWidgetSettings(true);
+    setWidgetSettingsMessage(null);
+
+    try {
+      const saved = await saveShopWidgetSettings({
+        logo_url: widgetSettingsForm.logo_url.trim() || null,
+        cover_image_url: widgetSettingsForm.cover_image_url.trim() || null,
+        fallback_product_image_url: widgetSettingsForm.fallback_product_image_url.trim() || null,
+        primary_color: widgetSettingsForm.primary_color,
+        button_color: widgetSettingsForm.button_color,
+        background_color: widgetSettingsForm.background_color,
+        text_color: widgetSettingsForm.text_color,
+        headline: widgetSettingsForm.headline.trim(),
+        subheadline: widgetSettingsForm.subheadline.trim(),
+        tryon_button_text: widgetSettingsForm.tryon_button_text.trim(),
+        buy_button_text: widgetSettingsForm.buy_button_text.trim(),
+        show_price: widgetSettingsForm.show_price,
+        show_buy_button: widgetSettingsForm.show_buy_button,
+        default_product_sort: widgetSettingsForm.default_product_sort,
+      });
+
+      setWidgetSettings(saved);
+      setWidgetSettingsForm(widgetSettingsToForm(saved));
+      showSuccessPopup("Đã lưu Widget Settings thành công.");
+    } catch (err: unknown) {
+      setWidgetSettingsMessage(formatApiError(err, "Không lưu được Widget Settings."));
+    } finally {
+      setSavingWidgetSettings(false);
+    }
   }
 
   function logout() {
@@ -1886,6 +2009,233 @@ export default function ClientDashboardPage() {
                         Tất cả sản phẩm đang có ít nhất một lượt mặc thử.
                       </div>
                     ) : null}
+                  </div>
+                </section>
+              </>
+            ) : null}
+
+            {activeDashboardTab === "widgetSettings" ? (
+              <>
+                <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+                  <SectionTitle
+                    icon="widget"
+                    title="Widget Settings"
+                    description="Cấu hình branding, màu sắc, text hiển thị và hành vi của widget public."
+                    badge={widgetSettings ? `Updated ${formatDateTime(widgetSettings.updated_at)}` : "Chưa tải settings"}
+                  />
+
+                  {!isShopOwner ? (
+                    <p className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                      Tài khoản của bạn chỉ có quyền xem. Chỉ chủ shop/admin mới được chỉnh Widget Settings.
+                    </p>
+                  ) : null}
+
+                  {widgetSettingsMessage ? (
+                    <p className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200">
+                      {widgetSettingsMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+                    <div className="space-y-5">
+                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Branding</h3>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <label className="text-sm font-medium text-slate-300">
+                            Logo URL
+                            <input
+                              value={widgetSettingsForm.logo_url}
+                              onChange={(event) => updateWidgetSettingsForm({ logo_url: event.target.value })}
+                              placeholder="https://.../logo.png"
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+
+                          <label className="text-sm font-medium text-slate-300">
+                            Cover image URL
+                            <input
+                              value={widgetSettingsForm.cover_image_url}
+                              onChange={(event) => updateWidgetSettingsForm({ cover_image_url: event.target.value })}
+                              placeholder="https://.../cover.jpg"
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+
+                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                            Fallback product image URL
+                            <input
+                              value={widgetSettingsForm.fallback_product_image_url}
+                              onChange={(event) => updateWidgetSettingsForm({ fallback_product_image_url: event.target.value })}
+                              placeholder="https://.../fallback.jpg"
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Màu sắc</h3>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          {([
+                            ["primary_color", "Primary color"],
+                            ["button_color", "Button color"],
+                            ["background_color", "Background color"],
+                            ["text_color", "Text color"],
+                          ] as const).map(([key, label]) => (
+                            <label key={key} className="text-sm font-medium text-slate-300">
+                              {label}
+                              <div className="mt-2 flex gap-2">
+                                <input
+                                  type="color"
+                                  value={widgetSettingsForm[key]}
+                                  onChange={(event) => updateWidgetSettingsForm({ [key]: event.target.value } as Partial<WidgetSettingsFormState>)}
+                                  className="h-12 w-14 rounded-2xl border border-slate-700 bg-slate-950 p-1"
+                                />
+                                <input
+                                  value={widgetSettingsForm[key]}
+                                  onChange={(event) => updateWidgetSettingsForm({ [key]: event.target.value } as Partial<WidgetSettingsFormState>)}
+                                  className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Text hiển thị</h3>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                            Headline
+                            <input
+                              value={widgetSettingsForm.headline}
+                              onChange={(event) => updateWidgetSettingsForm({ headline: event.target.value })}
+                              maxLength={120}
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                            Subheadline
+                            <textarea
+                              value={widgetSettingsForm.subheadline}
+                              onChange={(event) => updateWidgetSettingsForm({ subheadline: event.target.value })}
+                              maxLength={240}
+                              rows={3}
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                          <label className="text-sm font-medium text-slate-300">
+                            Text nút try-on
+                            <input
+                              value={widgetSettingsForm.tryon_button_text}
+                              onChange={(event) => updateWidgetSettingsForm({ tryon_button_text: event.target.value })}
+                              maxLength={40}
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                          <label className="text-sm font-medium text-slate-300">
+                            Text nút mua
+                            <input
+                              value={widgetSettingsForm.buy_button_text}
+                              onChange={(event) => updateWidgetSettingsForm({ buy_button_text: event.target.value })}
+                              maxLength={40}
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Hành vi widget</h3>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-300">
+                            Hiển thị giá
+                            <input
+                              type="checkbox"
+                              checked={widgetSettingsForm.show_price}
+                              onChange={(event) => updateWidgetSettingsForm({ show_price: event.target.checked })}
+                              className="h-5 w-5 accent-blue-600"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-300">
+                            Hiển thị nút mua
+                            <input
+                              type="checkbox"
+                              checked={widgetSettingsForm.show_buy_button}
+                              onChange={(event) => updateWidgetSettingsForm({ show_buy_button: event.target.checked })}
+                              className="h-5 w-5 accent-blue-600"
+                            />
+                          </label>
+                          <label className="text-sm font-medium text-slate-300 md:col-span-2">
+                            Sắp xếp sản phẩm mặc định
+                            <select
+                              value={widgetSettingsForm.default_product_sort}
+                              onChange={(event) => updateWidgetSettingsForm({ default_product_sort: event.target.value as WidgetSettingsFormState["default_product_sort"] })}
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                            >
+                              <option value="latest">Mới nhất</option>
+                              <option value="most_tryon">Nhiều lượt thử nhất</option>
+                              <option value="price_asc">Giá thấp đến cao</option>
+                              <option value="price_desc">Giá cao đến thấp</option>
+                              <option value="name_asc">Tên A-Z</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <div className="overflow-hidden rounded-3xl border border-slate-800 bg-white shadow-lg shadow-slate-950/20" style={{ backgroundColor: widgetSettingsForm.background_color, color: widgetSettingsForm.text_color }}>
+                        {widgetSettingsForm.cover_image_url ? (
+                          <img src={widgetSettingsForm.cover_image_url} alt="Widget cover preview" className="h-40 w-full object-cover" />
+                        ) : (
+                          <div className="flex h-40 items-center justify-center bg-slate-100 text-sm text-slate-500">Cover preview</div>
+                        )}
+                        <div className="p-5">
+                          <div className="flex items-center gap-3">
+                            {widgetSettingsForm.logo_url ? (
+                              <img src={widgetSettingsForm.logo_url} alt="Logo preview" className="h-12 w-12 rounded-2xl object-cover" />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-200 text-xs text-slate-500">Logo</div>
+                            )}
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: widgetSettingsForm.primary_color }}>AI Try-On</p>
+                              <h3 className="text-xl font-bold">{widgetSettingsForm.headline}</h3>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-sm opacity-80">{widgetSettingsForm.subheadline}</p>
+                          <button type="button" className="mt-5 rounded-2xl px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: widgetSettingsForm.button_color }}>
+                            {widgetSettingsForm.tryon_button_text}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Ghi chú bảo mật</h3>
+                        <p className="mt-3 text-sm leading-6 text-slate-400">
+                          Backend sẽ validate URL chỉ nhận http/https và màu đúng HEX. Không cho nhập custom HTML/CSS/JS để tránh phá layout hoặc XSS.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-5">
+                    <button
+                      type="button"
+                      onClick={() => setWidgetSettingsForm(widgetSettingsToForm(widgetSettings))}
+                      disabled={savingWidgetSettings}
+                      className="rounded-2xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveWidgetSettings}
+                      disabled={savingWidgetSettings || !isShopOwner}
+                      className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingWidgetSettings ? "Đang lưu..." : "Lưu Widget Settings"}
+                    </button>
                   </div>
                 </section>
               </>
