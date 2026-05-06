@@ -490,4 +490,31 @@ class ShopWidgetSettingsResponse(ORMBase):
 # =========================
 # Body Models
 # =========================
- 
+
+class BodyModelCreate(BaseModel):
+    shop_id: uuid.UUID
+    name: str = Field(min_length=1, max_length=120)
+    thumbnail_url: str | None = None
+    model_type: str = "preset"
+    status: str = "active"
+    metadata: dict[str, Any] | None = None
+
+
+class BodyModelUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    thumbnail_url: str | None = None
+    model_type: str | None = None
+    status: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class BodyModelResponse(ORMBase):
+    id: uuid.UUID
+    shop_id: uuid.UUID
+    name: str
+    thumbnail_url: str | None = None
+    model_type: str
+    status: str
+    metadata: dict[str, Any] | None = Field(default=None, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime

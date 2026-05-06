@@ -19,6 +19,7 @@ from app.models.shop_subscriptions import ShopSubscription
 from app.models.monthly_usages import MonthlyUsage
 from app.models.accounts import Accounts
 from app.models.shop_widget_settings import ShopWidgetSettings
+from app.models.body_models import BodyModel
 from app.schemas.entities import (
     ShopCreate,
     ShopUpdate,
@@ -56,6 +57,9 @@ from app.schemas.entities import (
     ShopWidgetSettingsCreate,
     ShopWidgetSettingsUpdate,
     ShopWidgetSettingsResponse,
+    BodyModelCreate,
+    BodyModelUpdate,
+    BodyModelResponse,
 )
 
 
@@ -283,6 +287,16 @@ register_crud_routes(
     create_schema=ShopWidgetSettingsCreate,
     update_schema=ShopWidgetSettingsUpdate,
     response_schema=ShopWidgetSettingsResponse,
+    field_map={"metadata": "metadata_"},
+)
+
+register_crud_routes(
+    path="/body-models",
+    name="Body Model",
+    model=BodyModel,
+    create_schema=BodyModelCreate,
+    update_schema=BodyModelUpdate,
+    response_schema=BodyModelResponse,
     field_map={"metadata": "metadata_"},
 )
 

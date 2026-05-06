@@ -32,6 +32,7 @@ type DashboardData = {
   plans: Plan[];
   subscriptions: ShopSubscription[];
   tryonJobs: TryonJob[];
+  bodyModels: BodyModel[];
 };
 
 type TopTryonProductRow = {
@@ -44,9 +45,10 @@ type TopTryonProductRow = {
   latestTryonAt: string | null;
 };
 
-type DashboardTab = "overview" | "products" | "analytics" | "tryonInsights" | "widgetSettings";
+type DashboardTab = "overview" | "products" | "bodyModels" | "analytics" | "tryonInsights" | "widgetSettings";
 
 type ProductSortKey = "name" | "category" | "price" | "imageCount" | "status" | "createdAt" | "updatedAt";
+type BodyModelSortKey = "name" | "modelType" | "status" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 
 type IconName =
@@ -75,6 +77,7 @@ type IconName =
 const dashboardTabs: { id: DashboardTab; label: string; description: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", description: "Tổng quan shop", icon: "home" },
   { id: "products", label: "Products", description: "Quản lý sản phẩm", icon: "box" },
+  { id: "bodyModels", label: "Body Models", description: "Quản lý mẫu người mặc", icon: "shirt" },
   { id: "analytics", label: "Widget Health", description: "Tình trạng widget & ảnh", icon: "shield" },
   { id: "tryonInsights", label: "Try-on Insights", description: "Cơ hội từ lượt mặc thử", icon: "sparkles" },
   { id: "widgetSettings", label: "Widget Settings", description: "Branding & giao diện", icon: "widget" },
@@ -133,6 +136,26 @@ type ProductAssetFormState = {
   status: string;
   error_message: string;
   markedForDeletion: boolean;
+};
+
+type BodyModel = {
+  id: string;
+  shop_id: string;
+  name: string;
+  thumbnail_url?: string | null;
+  model_type: string;
+  status: string;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BodyModelFormState = {
+  name: string;
+  thumbnail_url: string;
+  model_type: string;
+  status: string;
+  metadataJson: string;
 };
 
 type WidgetSettingsFormState = {
@@ -220,6 +243,34 @@ function assetToForm(asset: ProductAsset): ProductAssetFormState {
   };
 }
 
+function bodyModelToForm(bodyModel?: BodyModel | null): BodyModelFormState {
+  if (!bodyModel) {
+    return {
+      name: "",
+      thumbnail_url: "",
+      model_type: "preset",
+      status: "active",
+      metadataJson: "",
+    };
+  }
+
+  return {
+    name: bodyModel.name ?? "",
+    thumbnail_url: bodyModel.thumbnail_url ?? "",
+    model_type: bodyModel.model_type ?? "preset",
+    status: bodyModel.status ?? "active",
+    metadataJson: bodyModel.metadata ? JSON.stringify(bodyModel.metadata, null, 2) : "",
+  };
+}
+
+function getBodyModelCreatedAt(bodyModel: BodyModel) {
+  return bodyModel.created_at ?? null;
+}
+
+function getBodyModelUpdatedAt(bodyModel: BodyModel) {
+  return bodyModel.updated_at ?? null;
+}
+
 function splitImageUrls(value: string) {
   return value
     .split(/\n|,/)
@@ -238,6 +289,41 @@ function normalizeImageUrl(value: string) {
   } catch {
     return "";
   }
+}
+
+function isDataImageUrl(value?: string | null) {
+  const trimmed = value?.trim() ?? "";
+  return /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed);
+}
+
+function getBodyModelThumbnailPreviewUrl(value?: string | null) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+
+  const normalizedUrl = normalizeImageUrl(trimmed);
+  if (normalizedUrl) return normalizedUrl;
+
+  if (isDataImageUrl(trimmed)) return trimmed;
+
+  return "";
+}
+
+function readImageFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Không đọc được file ảnh."));
+    };
+
+    reader.onerror = () => reject(new Error("Không đọc được file ảnh."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function formatNumber(value: number) {
@@ -571,10 +657,43 @@ function ProductSortButton({
   );
 }
 
+function BodyModelSortButton({
+  label,
+  sortKey,
+  activeSortKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: BodyModelSortKey;
+  activeSortKey: BodyModelSortKey;
+  direction: SortDirection;
+  onSort: (key: BodyModelSortKey) => void;
+}) {
+  const active = activeSortKey === sortKey;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={[
+        "inline-flex w-full items-center gap-1.5 text-left text-xs font-semibold uppercase tracking-wide transition hover:text-slate-200",
+        active ? "text-blue-300" : "text-slate-500",
+      ].join(" ")}
+      title={`Sort theo ${label}`}
+    >
+      <span>{label}</span>
+      <span className={active ? "text-blue-300" : "text-slate-600"}>
+        {active ? (direction === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  );
+}
+
 export default function ClientDashboardPage() {
   const router = useRouter();
   const [session, setSession] = useState<ClientSession | null>(null);
-  const [data, setData] = useState<DashboardData>({ products: [], assets: [], plans: [], subscriptions: [], tryonJobs: [] });
+  const [data, setData] = useState<DashboardData>({ products: [], assets: [], plans: [], subscriptions: [], tryonJobs: [], bodyModels: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
@@ -601,6 +720,19 @@ export default function ClientDashboardPage() {
   const [productPage, setProductPage] = useState(1);
   const [productPageSize, setProductPageSize] = useState<"5" | "10" | "20" | "50" | "all">("5");
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("overview");
+  const [viewingBodyModel, setViewingBodyModel] = useState<BodyModel | null>(null);
+  const [editingBodyModel, setEditingBodyModel] = useState<BodyModel | null>(null);
+  const [bodyModelForm, setBodyModelForm] = useState<BodyModelFormState | null>(null);
+  const [savingBodyModel, setSavingBodyModel] = useState(false);
+  const [bodyModelMessage, setBodyModelMessage] = useState<string | null>(null);
+  const [deletingBodyModelId, setDeletingBodyModelId] = useState<string | null>(null);
+  const [bodyModelSearch, setBodyModelSearch] = useState("");
+  const [bodyModelStatusFilter, setBodyModelStatusFilter] = useState("all");
+  const [bodyModelTypeFilter, setBodyModelTypeFilter] = useState("all");
+  const [bodyModelSortKey, setBodyModelSortKey] = useState<BodyModelSortKey>("createdAt");
+  const [bodyModelSortDirection, setBodyModelSortDirection] = useState<SortDirection>("desc");
+  const [bodyModelPage, setBodyModelPage] = useState(1);
+  const [bodyModelPageSize, setBodyModelPageSize] = useState<"5" | "10" | "20" | "50" | "all">("5");
   useEffect(() => {
     const auth = readClientAuth();
     if (!auth) {
@@ -618,12 +750,13 @@ export default function ClientDashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [productsResponse, assetsResponse, plansResponse, subscriptionsResponse, tryonJobsResponse, widgetSettingsResponse] = await Promise.all([
+        const [productsResponse, assetsResponse, plansResponse, subscriptionsResponse, tryonJobsResponse, bodyModelsResponse, widgetSettingsResponse] = await Promise.all([
           api.get<Product[]>("/api/v1/products", { params: { skip: 0, limit: 1000 } }),
           api.get<ProductAsset[]>("/api/v1/product-assets", { params: { skip: 0, limit: 1000 } }),
           api.get<Plan[]>("/api/v1/plans", { params: { skip: 0, limit: 1000 } }),
           api.get<ShopSubscription[]>("/api/v1/shop-subscriptions", { params: { skip: 0, limit: 1000 } }),
           api.get<TryonJob[]>("/api/v1/tryon-jobs", { params: { skip: 0, limit: 1000 } }),
+          api.get<BodyModel[]>("/api/v1/body-models", { params: { skip: 0, limit: 1000 } }),
           fetchShopWidgetSettings().catch(() => null),
         ]);
 
@@ -641,6 +774,7 @@ export default function ClientDashboardPage() {
           plans: plansResponse.data,
           subscriptions: subscriptionsResponse.data.filter((sub) => sub.shop_id === shopId),
           tryonJobs: tryonJobsResponse.data.filter((job) => job.shop_id === shopId),
+          bodyModels: bodyModelsResponse.data.filter((bodyModel) => bodyModel.shop_id === shopId && bodyModel.status !== "deleted"),
         });
 
         if (widgetSettingsResponse) {
@@ -777,6 +911,23 @@ export default function ClientDashboardPage() {
 
     return Array.from(new Set(statuses)).sort((a, b) => a.localeCompare(b));
   }, [data.products]);
+
+
+  const bodyModelStatusOptions = useMemo(() => {
+    const statuses = data.bodyModels
+      .map((bodyModel) => bodyModel.status?.trim())
+      .filter((status): status is string => Boolean(status));
+
+    return Array.from(new Set(statuses)).sort((a, b) => a.localeCompare(b));
+  }, [data.bodyModels]);
+
+  const bodyModelTypeOptions = useMemo(() => {
+    const modelTypes = data.bodyModels
+      .map((bodyModel) => bodyModel.model_type?.trim())
+      .filter((modelType): modelType is string => Boolean(modelType));
+
+    return Array.from(new Set(modelTypes)).sort((a, b) => a.localeCompare(b));
+  }, [data.bodyModels]);
 
 
   const tryonCountsByProductId = useMemo(() => {
@@ -1182,6 +1333,106 @@ export default function ClientDashboardPage() {
     setTopTryonPage((page) => Math.min(page, topTryonTotalPages));
   }, [topTryonTotalPages]);
 
+
+  const filteredBodyModels = useMemo(() => {
+    const keyword = bodyModelSearch.trim().toLowerCase();
+
+    return data.bodyModels.filter((bodyModel) => {
+      if (bodyModelStatusFilter !== "all" && bodyModel.status !== bodyModelStatusFilter) {
+        return false;
+      }
+
+      if (bodyModelTypeFilter !== "all" && bodyModel.model_type !== bodyModelTypeFilter) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      return [
+        bodyModel.name,
+        bodyModel.thumbnail_url,
+        bodyModel.model_type,
+        bodyModel.status,
+        bodyModel.id,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword));
+    });
+  }, [bodyModelSearch, bodyModelStatusFilter, bodyModelTypeFilter, data.bodyModels]);
+
+  const sortedBodyModels = useMemo(() => {
+    return [...filteredBodyModels].sort((a, b) => {
+      const directionMultiplier = bodyModelSortDirection === "asc" ? 1 : -1;
+      let result = 0;
+
+      switch (bodyModelSortKey) {
+        case "name":
+          result = compareText(a.name, b.name);
+          break;
+        case "modelType":
+          result = compareText(a.model_type, b.model_type);
+          break;
+        case "status":
+          result = compareText(a.status, b.status);
+          break;
+        case "updatedAt":
+          result = getDateTimeValue(getBodyModelUpdatedAt(a)) - getDateTimeValue(getBodyModelUpdatedAt(b));
+          break;
+        case "createdAt":
+        default:
+          result = getDateTimeValue(getBodyModelCreatedAt(a)) - getDateTimeValue(getBodyModelCreatedAt(b));
+          break;
+      }
+
+      if (result === 0) {
+        result = getDateTimeValue(getBodyModelCreatedAt(a)) - getDateTimeValue(getBodyModelCreatedAt(b));
+      }
+
+      return result * directionMultiplier;
+    });
+  }, [bodyModelSortDirection, bodyModelSortKey, filteredBodyModels]);
+
+  const bodyModelResolvedPageSize =
+    bodyModelPageSize === "all" ? filteredBodyModels.length || 1 : Number(bodyModelPageSize);
+
+  const bodyModelTotalPages =
+    bodyModelPageSize === "all"
+      ? 1
+      : Math.max(1, Math.ceil(filteredBodyModels.length / bodyModelResolvedPageSize));
+
+  const paginatedBodyModels = useMemo(() => {
+    if (bodyModelPageSize === "all") {
+      return sortedBodyModels;
+    }
+
+    const safePage = Math.min(bodyModelPage, bodyModelTotalPages);
+    const startIndex = (safePage - 1) * bodyModelResolvedPageSize;
+
+    return sortedBodyModels.slice(startIndex, startIndex + bodyModelResolvedPageSize);
+  }, [bodyModelPage, bodyModelPageSize, bodyModelResolvedPageSize, bodyModelTotalPages, sortedBodyModels]);
+
+  const bodyModelPageStart =
+    filteredBodyModels.length === 0
+      ? 0
+      : bodyModelPageSize === "all"
+        ? 1
+        : (bodyModelPage - 1) * bodyModelResolvedPageSize + 1;
+
+  const bodyModelPageEnd =
+    bodyModelPageSize === "all"
+      ? filteredBodyModels.length
+      : Math.min(bodyModelPage * bodyModelResolvedPageSize, filteredBodyModels.length);
+
+  useEffect(() => {
+    setBodyModelPage(1);
+  }, [bodyModelSearch, bodyModelStatusFilter, bodyModelTypeFilter, bodyModelPageSize, bodyModelSortDirection, bodyModelSortKey]);
+
+  useEffect(() => {
+    setBodyModelPage((page) => Math.min(page, bodyModelTotalPages));
+  }, [bodyModelTotalPages]);
+
   function handleProductSort(sortKey: ProductSortKey) {
     if (productSortKey === sortKey) {
       setProductSortDirection((currentDirection) => (currentDirection === "asc" ? "desc" : "asc"));
@@ -1190,6 +1441,187 @@ export default function ClientDashboardPage() {
 
     setProductSortKey(sortKey);
     setProductSortDirection(sortKey === "createdAt" || sortKey === "updatedAt" ? "desc" : "asc");
+  }
+
+
+  function handleBodyModelSort(sortKey: BodyModelSortKey) {
+    if (bodyModelSortKey === sortKey) {
+      setBodyModelSortDirection((currentDirection) => (currentDirection === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setBodyModelSortKey(sortKey);
+    setBodyModelSortDirection(sortKey === "createdAt" || sortKey === "updatedAt" ? "desc" : "asc");
+  }
+
+  function openCreateBodyModel() {
+    if (!isShopOwner) {
+      setBodyModelMessage("Chỉ chủ shop/admin mới được thêm Body Model.");
+      return;
+    }
+
+    setBodyModelMessage(null);
+    setViewingBodyModel(null);
+    setEditingBodyModel(null);
+    setBodyModelForm(bodyModelToForm(null));
+  }
+
+  function openViewBodyModel(bodyModel: BodyModel) {
+    setBodyModelMessage(null);
+    setViewingBodyModel(bodyModel);
+  }
+
+  function openEditBodyModel(bodyModel: BodyModel) {
+    setBodyModelMessage(null);
+    setEditingBodyModel(bodyModel);
+    setBodyModelForm(bodyModelToForm(bodyModel));
+  }
+
+  function closeBodyModelModals() {
+    if (savingBodyModel) return;
+    setViewingBodyModel(null);
+    setEditingBodyModel(null);
+    setBodyModelForm(null);
+    setBodyModelMessage(null);
+  }
+
+  function parseBodyModelMetadata(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      throw new Error("Metadata phải là JSON hợp lệ.");
+    }
+  }
+
+  async function handleBodyModelThumbnailFile(file?: File) {
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setBodyModelMessage("File ảnh không hợp lệ. Chỉ hỗ trợ JPG, PNG hoặc WebP.");
+      return;
+    }
+
+    const maxSizeInMb = 5;
+    if (file.size > maxSizeInMb * 1024 * 1024) {
+      setBodyModelMessage(`File ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn ${maxSizeInMb}MB.`);
+      return;
+    }
+
+    try {
+      const dataUrl = await readImageFileAsDataUrl(file);
+      setBodyModelForm((current) => (current ? { ...current, thumbnail_url: dataUrl } : current));
+      setBodyModelMessage(null);
+    } catch (err: unknown) {
+      setBodyModelMessage(err instanceof Error ? err.message : "Không upload được ảnh Body Model.");
+    }
+  }
+
+  async function saveBodyModelChanges() {
+    if (!bodyModelForm || !session) return;
+
+    if (!bodyModelForm.name.trim()) {
+      setBodyModelMessage("Vui lòng nhập tên Body Model.");
+      return;
+    }
+
+    if (!bodyModelForm.model_type.trim()) {
+      setBodyModelMessage("Vui lòng nhập model type.");
+      return;
+    }
+
+    const thumbnailUrl = bodyModelForm.thumbnail_url.trim();
+    if (thumbnailUrl && !normalizeImageUrl(thumbnailUrl) && !isDataImageUrl(thumbnailUrl)) {
+      setBodyModelMessage("Ảnh Body Model không hợp lệ. Chỉ hỗ trợ URL http/https hoặc upload file JPG/PNG/WebP.");
+      return;
+    }
+
+    setSavingBodyModel(true);
+    setBodyModelMessage(null);
+
+    try {
+      const metadata = parseBodyModelMetadata(bodyModelForm.metadataJson);
+      const payload = {
+        name: bodyModelForm.name.trim(),
+        thumbnail_url: thumbnailUrl || null,
+        model_type: bodyModelForm.model_type.trim(),
+        status: bodyModelForm.status.trim() || "active",
+        metadata,
+      };
+
+      if (editingBodyModel) {
+        const response = await api.patch<BodyModel>(`/api/v1/body-models/${editingBodyModel.id}`, payload);
+        const updatedBodyModel = response.data;
+
+        setData((current) => ({
+          ...current,
+          bodyModels: current.bodyModels.map((item) => (item.id === updatedBodyModel.id ? updatedBodyModel : item)),
+        }));
+
+        setViewingBodyModel(null);
+        setEditingBodyModel(null);
+        setBodyModelForm(null);
+        showSuccessPopup(`Đã lưu Body Model "${updatedBodyModel.name}".`);
+      } else {
+        if (!isShopOwner) {
+          setBodyModelMessage("Chỉ chủ shop/admin mới được thêm Body Model.");
+          return;
+        }
+
+        const response = await api.post<BodyModel>("/api/v1/body-models", {
+          shop_id: session.shop.id,
+          ...payload,
+        });
+        const createdBodyModel = response.data;
+
+        setData((current) => ({
+          ...current,
+          bodyModels: [createdBodyModel, ...current.bodyModels],
+        }));
+
+        setBodyModelForm(null);
+        showSuccessPopup(`Đã thêm Body Model "${createdBodyModel.name}".`);
+      }
+    } catch (err: unknown) {
+      setBodyModelMessage(err instanceof Error ? err.message : formatApiError(err, "Không lưu được Body Model."));
+    } finally {
+      setSavingBodyModel(false);
+    }
+  }
+
+  async function handleDeleteBodyModel(bodyModel: BodyModel) {
+    if (!isShopOwner) {
+      setBodyModelMessage("Chỉ chủ shop/admin mới được xóa Body Model.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Bạn có chắc muốn xóa Body Model "${bodyModel.name}" không?`);
+    if (!confirmed) return;
+
+    setDeletingBodyModelId(bodyModel.id);
+    setBodyModelMessage(null);
+
+    try {
+      await api.delete<BodyModel>(`/api/v1/body-models/${bodyModel.id}`);
+
+      setData((current) => ({
+        ...current,
+        bodyModels: current.bodyModels.filter((item) => item.id !== bodyModel.id),
+      }));
+
+      if (viewingBodyModel?.id === bodyModel.id || editingBodyModel?.id === bodyModel.id) {
+        closeBodyModelModals();
+      }
+
+      showSuccessPopup(`Đã xóa Body Model "${bodyModel.name}".`);
+    } catch (err: unknown) {
+      setBodyModelMessage(formatApiError(err, "Không xóa được Body Model."));
+    } finally {
+      setDeletingBodyModelId(null);
+    }
   }
 
   function getAssetPreviewUrl(asset: ProductAsset) {
@@ -1442,7 +1874,7 @@ export default function ClientDashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-5 sm:py-6 lg:px-8">
         <header className="flex flex-col gap-5 rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl shadow-slate-950/20 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm text-blue-300">Thông tin shop</p>
@@ -2347,7 +2779,7 @@ export default function ClientDashboardPage() {
                           <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-semibold text-blue-100">
-                                Link widget public
+                                Link dán vào trang cá nhân, mạng xã hội, page bán hàng
                               </p>
 
                               {widgetPublicUrl ? (
@@ -2370,7 +2802,7 @@ export default function ClientDashboardPage() {
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center justify-center rounded-2xl border border-blue-400/40 px-4 py-2.5 text-sm font-semibold text-blue-100 transition hover:bg-blue-500/20"
                                   >
-                                    Mở widget
+                                    Mở trang thử đồ AI
                                   </a>
 
                                   <button
@@ -2534,6 +2966,245 @@ export default function ClientDashboardPage() {
             ) : null}
 
 
+
+
+            {activeDashboardTab === "bodyModels" ? (
+              <>
+                <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold">Body Models</h2>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Quản lý mẫu người mặc dùng cho widget/try-on. Dữ liệu được lấy từ bảng body_models của backend.
+                      </p>
+
+                      {!isShopOwner ? (
+                        <p className="mt-2 text-xs text-amber-300">
+                          Tài khoản của bạn chỉ có quyền xem/sửa. Chỉ chủ shop/admin mới được thêm hoặc xóa Body Model.
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="flex w-full flex-col gap-3 xl:max-w-4xl xl:flex-row xl:items-end xl:justify-end">
+                      <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_190px_190px] xl:max-w-3xl">
+                        <div>
+                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Tìm kiếm Body Model
+                          </label>
+                          <input
+                            value={bodyModelSearch}
+                            onChange={(event) => setBodyModelSearch(event.target.value)}
+                            placeholder="Tên, URL ảnh, type, trạng thái..."
+                            className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Model type
+                          </label>
+                          <select
+                            value={bodyModelTypeFilter}
+                            onChange={(event) => setBodyModelTypeFilter(event.target.value)}
+                            className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                          >
+                            <option value="all">Tất cả type</option>
+                            {bodyModelTypeOptions.map((modelType) => (
+                              <option key={modelType} value={modelType}>{modelType}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Trạng thái
+                          </label>
+                          <select
+                            value={bodyModelStatusFilter}
+                            onChange={(event) => setBodyModelStatusFilter(event.target.value)}
+                            className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                          >
+                            <option value="all">Tất cả trạng thái</option>
+                            {bodyModelStatusOptions.map((status) => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {isShopOwner ? (
+                        <button
+                          type="button"
+                          onClick={openCreateBodyModel}
+                          className="flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-500"
+                        >
+                          <span className="inline-flex items-center gap-2"><Icon name="plus" className="h-4 w-4" />Thêm Body Model</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          title="Chỉ chủ shop/admin mới được thêm Body Model"
+                          className="flex h-[46px] shrink-0 cursor-not-allowed items-center justify-center rounded-2xl border border-slate-800 px-4 text-sm font-semibold text-slate-500 opacity-70"
+                        >
+                          Thêm Body Model
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {bodyModelMessage ? (
+                    <p className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200">
+                      {bodyModelMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-5 overflow-hidden rounded-2xl border border-slate-800">
+                    <table className="min-w-full divide-y divide-slate-800 text-sm">
+                      <thead className="bg-slate-950/70 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3"><BodyModelSortButton label="Body Model" sortKey="name" activeSortKey={bodyModelSortKey} direction={bodyModelSortDirection} onSort={handleBodyModelSort} /></th>
+                          <th className="px-4 py-3">Thumbnail</th>
+                          <th className="px-4 py-3"><BodyModelSortButton label="Model type" sortKey="modelType" activeSortKey={bodyModelSortKey} direction={bodyModelSortDirection} onSort={handleBodyModelSort} /></th>
+                          <th className="px-4 py-3"><BodyModelSortButton label="Trạng thái" sortKey="status" activeSortKey={bodyModelSortKey} direction={bodyModelSortDirection} onSort={handleBodyModelSort} /></th>
+                          <th className="px-4 py-3"><BodyModelSortButton label="Ngày tạo" sortKey="createdAt" activeSortKey={bodyModelSortKey} direction={bodyModelSortDirection} onSort={handleBodyModelSort} /></th>
+                          <th className="px-4 py-3"><BodyModelSortButton label="Ngày update" sortKey="updatedAt" activeSortKey={bodyModelSortKey} direction={bodyModelSortDirection} onSort={handleBodyModelSort} /></th>
+                          <th className="px-4 py-3 text-right">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {paginatedBodyModels.map((bodyModel) => (
+                          <tr key={bodyModel.id} className="hover:bg-slate-800/40">
+                            <td className="px-4 py-4">
+                              <p className="font-medium text-slate-100">{bodyModel.name}</p>
+                              <p className="mt-1 max-w-xs truncate text-xs text-slate-500">{bodyModel.id}</p>
+                            </td>
+                            <td className="px-4 py-4">
+                              {getBodyModelThumbnailPreviewUrl(bodyModel.thumbnail_url) ? (
+                                <img
+                                  src={getBodyModelThumbnailPreviewUrl(bodyModel.thumbnail_url)}
+                                  alt={bodyModel.name}
+                                  className="h-14 w-14 rounded-xl border border-slate-700 object-cover"
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-dashed border-slate-700 text-[10px] text-slate-500">
+                                  No img
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-slate-300">{bodyModel.model_type}</td>
+                            <td className="px-4 py-4 text-slate-300">
+                              <span className={bodyModel.status === "active" ? "rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300" : "rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300"}>
+                                {bodyModel.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-slate-300">{formatDateTime(getBodyModelCreatedAt(bodyModel))}</td>
+                            <td className="px-4 py-4 text-slate-300">{formatDateTime(getBodyModelUpdatedAt(bodyModel))}</td>
+                            <td className="px-4 py-4">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openViewBodyModel(bodyModel)}
+                                  className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                >
+                                  <span className="inline-flex items-center gap-1"><Icon name="eye" className="h-3.5 w-3.5" />Xem</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditBodyModel(bodyModel)}
+                                  className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500"
+                                >
+                                  <span className="inline-flex items-center gap-1"><Icon name="edit" className="h-3.5 w-3.5" />Sửa</span>
+                                </button>
+                                {isShopOwner ? (
+                                  <button
+                                    type="button"
+                                    disabled={deletingBodyModelId === bodyModel.id}
+                                    onClick={() => handleDeleteBodyModel(bodyModel)}
+                                    className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {deletingBodyModelId === bodyModel.id ? "Đang xóa..." : "Xóa"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+
+                        {paginatedBodyModels.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                              {bodyModelSearch.trim() || bodyModelStatusFilter !== "all" || bodyModelTypeFilter !== "all"
+                                ? "Không tìm thấy Body Model phù hợp."
+                                : "Chưa có Body Model nào."}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-4 border-t border-slate-800 pt-4 lg:flex-row lg:items-center lg:justify-between">
+                    <p className="text-sm text-slate-400">
+                      Hiển thị <span className="font-semibold text-slate-200">{formatNumber(bodyModelPageStart)}</span>
+                      {" - "}
+                      <span className="font-semibold text-slate-200">{formatNumber(bodyModelPageEnd)}</span>
+                      {" trong "}
+                      <span className="font-semibold text-slate-200">{formatNumber(filteredBodyModels.length)}</span>
+                      {" Body Model"}
+                    </p>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-400">Số dòng</span>
+                        <select
+                          value={bodyModelPageSize}
+                          onChange={(event) => setBodyModelPageSize(event.target.value as "5" | "10" | "20" | "50" | "all")}
+                          className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                        >
+                          <option value="5">5</option>
+                          <option value="10">10</option>
+                          <option value="20">20</option>
+                          <option value="50">50</option>
+                          <option value="all">All</option>
+                        </select>
+                      </div>
+
+                      {bodyModelPageSize !== "all" ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={bodyModelPage <= 1}
+                            onClick={() => setBodyModelPage((page) => Math.max(1, page - 1))}
+                            className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <span className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200">
+                            {bodyModelPage} / {bodyModelTotalPages}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={bodyModelPage >= bodyModelTotalPages}
+                            onClick={() => setBodyModelPage((page) => Math.min(bodyModelTotalPages, page + 1))}
+                            className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="w-fit rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200">
+                          Showing all
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              </>
+            ) : null}
 
             {activeDashboardTab === "products" ? (
               <>
@@ -2908,6 +3579,236 @@ export default function ClientDashboardPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+
+      {viewingBodyModel ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl shadow-black/40">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm text-blue-300">Chi tiết Body Model</p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">{viewingBodyModel.name}</h3>
+                <p className="mt-2 break-all text-sm text-slate-400">ID: {viewingBodyModel.id}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditBodyModel(viewingBodyModel)}
+                  className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+                >
+                  Sửa
+                </button>
+                <button
+                  type="button"
+                  onClick={closeBodyModelModals}
+                  className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/50">
+                {getBodyModelThumbnailPreviewUrl(viewingBodyModel.thumbnail_url) ? (
+                  <img src={getBodyModelThumbnailPreviewUrl(viewingBodyModel.thumbnail_url)} alt={viewingBodyModel.name} className="h-64 w-full object-cover" />
+                ) : (
+                  <div className="flex h-64 items-center justify-center text-sm text-slate-500">No image</div>
+                )}
+              </div>
+
+              <dl className="rounded-2xl border border-slate-800 bg-slate-950/50 p-5 text-sm">
+                <div className="flex justify-between gap-4 border-b border-slate-800 py-3"><dt className="text-slate-400">Model type</dt><dd className="text-right text-slate-200">{viewingBodyModel.model_type}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-slate-800 py-3"><dt className="text-slate-400">Trạng thái</dt><dd className="text-right text-slate-200">{viewingBodyModel.status}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-slate-800 py-3"><dt className="text-slate-400">Ngày tạo</dt><dd className="text-right text-slate-200">{formatDateTime(viewingBodyModel.created_at)}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-slate-800 py-3"><dt className="text-slate-400">Ngày update</dt><dd className="text-right text-slate-200">{formatDateTime(viewingBodyModel.updated_at)}</dd></div>
+                <div className="py-3">
+                  <dt className="text-slate-400">Thumbnail URL</dt>
+                  <dd className="mt-2 break-all text-slate-200">
+                    {isDataImageUrl(viewingBodyModel.thumbnail_url)
+                      ? "Ảnh upload từ máy đang được lưu dạng data URL"
+                      : viewingBodyModel.thumbnail_url ?? "—"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {viewingBodyModel.metadata ? (
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/50 p-5">
+                <p className="text-sm font-semibold text-white">Metadata</p>
+                <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-slate-800 bg-black/40 p-4 text-xs text-slate-300">
+                  {JSON.stringify(viewingBodyModel.metadata, null, 2)}
+                </pre>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {bodyModelForm ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-blue-300">{editingBodyModel ? "Chỉnh sửa Body Model" : "Thêm Body Model"}</p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">{editingBodyModel?.name ?? "Body Model mới"}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeBodyModelModals}
+                className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+              <div className="grid gap-4">
+                <label className="text-sm font-medium text-slate-300">
+                  Tên Body Model *
+                  <input
+                    value={bodyModelForm.name}
+                    onChange={(event) => setBodyModelForm({ ...bodyModelForm, name: event.target.value })}
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                  />
+                </label>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-200">Ảnh Body Model</p>
+                    </div>
+
+                    {bodyModelForm.thumbnail_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setBodyModelForm({ ...bodyModelForm, thumbnail_url: "" })}
+                        className="w-fit rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800"
+                      >
+                        Xóa ảnh
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+                    <label className="min-w-0 text-sm font-medium text-slate-300">
+                      Thumbnail URL
+                      <input
+                        value={isDataImageUrl(bodyModelForm.thumbnail_url) ? "" : bodyModelForm.thumbnail_url}
+                        onChange={(event) => setBodyModelForm({ ...bodyModelForm, thumbnail_url: event.target.value })}
+                        placeholder={isDataImageUrl(bodyModelForm.thumbnail_url) ? "Đang dùng ảnh upload từ máy" : "https://..."}
+                        className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                      />
+                    </label>
+
+                    <label className="mt-0 flex cursor-pointer items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm font-semibold text-blue-200 transition hover:bg-blue-500/20 xl:mt-7">
+                      Upload từ máy
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(event) => {
+                          void handleBodyModelThumbnailFile(event.target.files?.[0]);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {isDataImageUrl(bodyModelForm.thumbnail_url) ? (
+                    <p className="mt-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                      Đã chọn ảnh từ máy. Khi lưu, ảnh sẽ được ghi vào thumbnail_url dạng data URL.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-slate-300">
+                    Model type *
+                    <input
+                      value={bodyModelForm.model_type}
+                      onChange={(event) => setBodyModelForm({ ...bodyModelForm, model_type: event.target.value })}
+                      placeholder="preset / custom / ..."
+                      className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                    />
+                  </label>
+
+                  <label className="text-sm font-medium text-slate-300">
+                    Status
+                    <select
+                      value={bodyModelForm.status}
+                      onChange={(event) => setBodyModelForm({ ...bodyModelForm, status: event.target.value })}
+                      className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="active">active</option>
+                      <option value="inactive">inactive</option>
+                      <option value="draft">draft</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="text-sm font-medium text-slate-300">
+                  Metadata JSON
+                  <textarea
+                    rows={8}
+                    value={bodyModelForm.metadataJson}
+                    onChange={(event) => setBodyModelForm({ ...bodyModelForm, metadataJson: event.target.value })}
+                    placeholder={'{"gender":"female","size":"M"}'}
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-sm text-white outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <h4 className="font-semibold text-white">Preview</h4>
+                  <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300">{bodyModelForm.status || "active"}</span>
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
+                  {getBodyModelThumbnailPreviewUrl(bodyModelForm.thumbnail_url) ? (
+                    <img
+                      src={getBodyModelThumbnailPreviewUrl(bodyModelForm.thumbnail_url)}
+                      alt={bodyModelForm.name || "Body Model"}
+                      className="h-80 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-80 items-center justify-center border border-dashed border-slate-700 px-4 text-center text-sm text-slate-500">
+                      Chưa có thumbnail preview. Hãy nhập URL ảnh hoặc upload ảnh từ máy.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                  <p className="truncate text-base font-semibold text-white">{bodyModelForm.name || "Tên Body Model"}</p>
+                  <p className="mt-1 text-sm text-slate-400">Type: {bodyModelForm.model_type || "preset"}</p>
+                </div>
+              </div>
+            </div>
+
+            {bodyModelMessage ? <p className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200">{bodyModelMessage}</p> : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeBodyModelModals}
+                disabled={savingBodyModel}
+                className="rounded-2xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={saveBodyModelChanges}
+                disabled={savingBodyModel || (!editingBodyModel && !isShopOwner)}
+                className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingBodyModel ? "Đang lưu..." : editingBodyModel ? "Lưu thay đổi" : "Thêm Body Model"}
+              </button>
             </div>
           </div>
         </div>

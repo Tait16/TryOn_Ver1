@@ -40,6 +40,7 @@ class Shop(Base):
     products = relationship("Product", back_populates="shop", cascade="all, delete-orphan")
     tryon_jobs = relationship("TryOnJob", back_populates="shop", cascade="all, delete-orphan")
     usage_events = relationship("UsageEvent", back_populates="shop", cascade="all, delete-orphan")
+    body_models = relationship("BodyModel", cascade="all, delete-orphan")
     subscriptions = relationship("ShopSubscription", back_populates="shop", cascade="all, delete-orphan")
     monthly_usages = relationship("MonthlyUsage", back_populates="shop", cascade="all, delete-orphan")
     shop_widget_settings = relationship("ShopWidgetSettings", back_populates="shop", cascade="all, delete-orphan", uselist=False)
